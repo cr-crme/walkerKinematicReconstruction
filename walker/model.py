@@ -1,10 +1,17 @@
+import biorbd
 from biorbd import KinematicModelGeneric, Axis
 import ezc3d
+import numpy as np
 
 
 class WalkerModel:
     def __init__(self):
-        self.model = self._generate_generic_model()
+        self.generic_model = self._generate_generic_model()
+        self.model = None
+
+    @property
+    def is_model_loaded(self):
+        return self.model is not None
 
     @staticmethod
     def _generate_generic_model():
@@ -34,7 +41,7 @@ class WalkerModel:
             second_axis_markers=(("T10", "C7"), ("STRN", "CLAV")),
             axis_to_keep=Axis.Name.Z,
         )
-        model.add_marker("TRUNK", "T10", is_technical=True, is_anatomical=True)
+        model.add_marker("TRUNK", "T10", is_technical=False, is_anatomical=True)  # NOT TECHNICAL!
         model.add_marker("TRUNK", "C7", is_technical=True, is_anatomical=True)
         model.add_marker("TRUNK", "STRN", is_technical=True, is_anatomical=True)
         model.add_marker("TRUNK", "CLAV", is_technical=True, is_anatomical=True)
@@ -226,7 +233,7 @@ class WalkerModel:
         model.add_marker("LFOOT", "LHEE", is_technical=True, is_anatomical=True)
         return model
 
-    def generate_personalized(self, static_trial_path: str, model_path: str):
+    def generate_personalized_model(self, static_trial_path: str, model_path: str):
         """
         Collapse the generic model according to the data of the static trial
 
@@ -238,4 +245,49 @@ class WalkerModel:
             The path of the generated bioMod file
         """
 
-        self.model.generate_personalized(c3d=ezc3d.c3d(static_trial_path), save_path=model_path)
+        self.generic_model.generate_personalized(c3d=ezc3d.c3d(static_trial_path), save_path=model_path)
+        self.model = biorbd.Model(model_path)
+
+    def reconstruct_kinematics(self, trial: str) -> np.ndarray:
+        """
+        Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded
+
+        Parameters
+        ----------
+        trial
+            The path to the c3d file of the trial to reconstruct the kinematics from
+
+        Returns
+        -------
+        The matrix nq x ntimes of the reconstructed kinematics
+        """
+
+        if not self.is_model_loaded:
+            raise RuntimeError("The biorbd model must be loaded. You can do so by calling generate_personalized_model")
+
+        marker_names = tuple(n.to_string() for n in self.model.technicalMarkerNames())
+
+        c3d = ezc3d.c3d(trial)
+        marker_in_c3d = tuple(c3d["parameters"]["POINT"]["LABELS"]["value"].index(name) for name in marker_names)
+        markers = c3d['data']['points'][:3, marker_in_c3d, :] / 1000  # To meter
+
+        # Dispatch markers in biorbd structure so EKF can use it
+        markers_over_frames = []
+        for i in range(markers.shape[2]):
+            markers_over_frames.append([biorbd.NodeSegment(m) for m in markers[:, :, i].T])
+
+        # Create a Kalman filter structure
+        freq = 100  # Hz
+        params = biorbd.KalmanParam(freq)
+        kalman = biorbd.KalmanReconsMarkers(self.model, params)
+
+        # Perform the kalman filter for each frame (the first frame is much longer than the next)
+        q = biorbd.GeneralizedCoordinates(self.model)
+        qdot = biorbd.GeneralizedVelocity(self.model)
+        qddot = biorbd.GeneralizedAcceleration(self.model)
+        q_recons = np.ndarray((self.model.nbQ(), len(markers_over_frames)))
+        for i, targetMarkers in enumerate(markers_over_frames):
+            kalman.reconstructFrame(self.model, targetMarkers, q, qdot, qddot)
+            q_recons[:, i] = q.to_array()
+
+        return q_recons
