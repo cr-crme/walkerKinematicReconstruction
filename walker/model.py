@@ -269,7 +269,7 @@ class WalkerModel:
 
         c3d = ezc3d.c3d(trial)
         marker_in_c3d = tuple(c3d["parameters"]["POINT"]["LABELS"]["value"].index(name) for name in marker_names)
-        markers = c3d['data']['points'][:3, marker_in_c3d, :] / 1000  # To meter
+        markers = c3d["data"]["points"][:3, marker_in_c3d, :] / 1000  # To meter
 
         # Dispatch markers in biorbd structure so EKF can use it
         markers_over_frames = []
