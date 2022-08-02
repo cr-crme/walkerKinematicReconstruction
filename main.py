@@ -1,3 +1,5 @@
+import os
+
 from biorbd import KinematicModelGeneric, Axis
 import bioviz
 import ezc3d
@@ -218,57 +220,4 @@ model.add_marker("LFOOT", "L5MH")
 model.generate_personalized(c3d, kinematic_model_file_path)
 
 bioviz.Viz(kinematic_model_file_path).exec()
-
-# # The thigh segment
-# thigh = Segment(
-#     name="THIGH",
-#     parent_name=trunk.name,
-#     rotations="x",
-#     mesh=((0, 0, 0), (0, 0, -0.42)),
-# )
-#
-# # The shank segment
-# knee_marker = Marker(
-#     name="KNEE",
-#     parent_name="SHANK",
-#     position=(0, 0, 0),
-# )
-# shank = Segment(
-#     name="SHANK",
-#     parent_name=thigh.name,
-#     rt="0 0 0 xyz 0 0 -0.42",
-#     rotations="x",
-#     mesh=((0, 0, 0), (0, 0, -0.43)),
-#     markers=(knee_marker,),
-# )
-#
-# # The foot segment
-# ankle_marker = Marker(
-#     name="ANKLE",
-#     parent_name="FOOT",
-#     position=(0, 0, 0),
-# )
-# toe_marker = Marker(
-#     name="TOE",
-#     parent_name="FOOT",
-#     position=(0, 0, 0.25),
-# )
-# foot = Segment(
-#     name="FOOT",
-#     parent_name=shank.name,
-#     rt="0 0 0 xyz 0 0 -0.43",
-#     rotations="x",
-#     mesh=((0, 0, 0), (0, 0, 0.25)),
-#     markers=(ankle_marker, toe_marker,),
-# )
-#
-# # Put the model together, print it and print it to a bioMod file
-# kinematic_chain = KinematicChain(segments=(trunk, head, upper_arm, lower_arm, hand, thigh, shank, foot))
-# kinematic_chain.write(kinematic_model_file_path)
-#
-# model = biorbd.Model(kinematic_model_file_path)
-# from bioviz.model_creation.__init__ import BiorbdUtils
-# print(BiorbdUtils.get_marker_names(model))
-# bioviz.Viz(kinematic_model_file_path).exec()
-#
-# os.remove(kinematic_model_file_path)
+os.remove(kinematic_model_file_path)
