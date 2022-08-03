@@ -7,7 +7,7 @@ from walker import WalkerModel
 # Options
 kinematic_model_file_path = "temporary.bioMod"
 static_trial = "data/pilote/Audrey_19_mai_statique.c3d"
-trial = "data/pilote/Audrey_19_mai_marche2.c3d"
+trial = "data/pilote/Audrey_19_mai_marche4.c3d"
 
 # Generate the personalized kinematic model
 model = WalkerModel()

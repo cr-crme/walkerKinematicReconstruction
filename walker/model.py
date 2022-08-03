@@ -16,7 +16,7 @@ class WalkerModel:
     @staticmethod
     def _generate_generic_model():
         model = KinematicModelGeneric()
-        model.add_segment("PELVIS", translations="yz", rotations="xyz")
+        model.add_segment("PELVIS", translations="xyz", rotations="xyz")
         model.set_rt(
             segment_name="PELVIS",
             origin_markers=("LPSI", "RPSI", "LASI", "RASI"),
@@ -41,7 +41,7 @@ class WalkerModel:
             second_axis_markers=(("T10", "C7"), ("STRN", "CLAV")),
             axis_to_keep=Axis.Name.Z,
         )
-        model.add_marker("TRUNK", "T10", is_technical=False, is_anatomical=True)  # NOT TECHNICAL!
+        model.add_marker("TRUNK", "T10", is_technical=True, is_anatomical=True)
         model.add_marker("TRUNK", "C7", is_technical=True, is_anatomical=True)
         model.add_marker("TRUNK", "STRN", is_technical=True, is_anatomical=True)
         model.add_marker("TRUNK", "CLAV", is_technical=True, is_anatomical=True)
@@ -233,7 +233,9 @@ class WalkerModel:
         model.add_marker("LFOOT", "LHEE", is_technical=True, is_anatomical=True)
         return model
 
-    def generate_personalized_model(self, static_trial_path: str, model_path: str):
+    def generate_personalized_model(
+            self, static_trial_path: str, model_path: str, first_frame: int = 0, last_frame: int = -1
+    ):
         """
         Collapse the generic model according to the data of the static trial
 
@@ -243,9 +245,15 @@ class WalkerModel:
             The path of the c3d file of the static trial
         model_path
             The path of the generated bioMod file
+        first_frame
+            The first frame of the data to use
+        last_frame
+            The last frame of the data to use
         """
 
-        self.generic_model.generate_personalized(c3d=ezc3d.c3d(static_trial_path), save_path=model_path)
+        self.generic_model.generate_personalized(
+            data_path=static_trial_path, save_path=model_path, first_frame=first_frame, last_frame=last_frame
+        )
         self.model = biorbd.Model(model_path)
 
     def reconstruct_kinematics(self, trial: str) -> np.ndarray:
@@ -268,13 +276,12 @@ class WalkerModel:
         marker_names = tuple(n.to_string() for n in self.model.technicalMarkerNames())
 
         c3d = ezc3d.c3d(trial)
-        marker_in_c3d = tuple(c3d["parameters"]["POINT"]["LABELS"]["value"].index(name) for name in marker_names)
-        markers = c3d["data"]["points"][:3, marker_in_c3d, :] / 1000  # To meter
-
-        # Dispatch markers in biorbd structure so EKF can use it
-        markers_over_frames = []
-        for i in range(markers.shape[2]):
-            markers_over_frames.append([biorbd.NodeSegment(m) for m in markers[:, :, i].T])
+        labels = c3d["parameters"]["POINT"]["LABELS"]["value"]
+        c3d_data = c3d["data"]["points"]
+        n_frames = c3d_data.shape[2]
+        index_in_c3d = np.array(tuple(labels.index(name) if name in labels else -1 for name in marker_names))
+        markers_in_c3d = np.ndarray((3, len(index_in_c3d), n_frames)) * np.nan
+        markers_in_c3d[:, index_in_c3d >= 0, :] = c3d_data[:3, index_in_c3d[index_in_c3d >= 0], :] / 1000  # To meter
 
         # Create a Kalman filter structure
         freq = 100  # Hz
@@ -285,9 +292,9 @@ class WalkerModel:
         q = biorbd.GeneralizedCoordinates(self.model)
         qdot = biorbd.GeneralizedVelocity(self.model)
         qddot = biorbd.GeneralizedAcceleration(self.model)
-        q_recons = np.ndarray((self.model.nbQ(), len(markers_over_frames)))
-        for i, targetMarkers in enumerate(markers_over_frames):
-            kalman.reconstructFrame(self.model, targetMarkers, q, qdot, qddot)
+        q_recons = np.ndarray((self.model.nbQ(), n_frames))
+        for i in range(n_frames):
+            kalman.reconstructFrame(self.model, np.reshape(markers_in_c3d[:, :, i].T, -1), q, qdot, qddot)
             q_recons[:, i] = q.to_array()
 
         return q_recons
