@@ -4,10 +4,20 @@ import ezc3d
 import numpy as np
 
 
+def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tuple[str, ...]:
+    return tuple(f"{n}{suffix}" for n in values)
+
+
 class WalkerModel:
     def __init__(self):
         self.generic_model = self._generate_generic_model()
         self.model = None
+
+        self.is_kinematic_reconstructed: bool = False
+        self.c3d: ezc3d.c3d | None = None
+        self.q: np.ndarray = np.ndarray(())
+        self.qdot: np.ndarray = np.ndarray(())
+        self.qddot: np.ndarray = np.ndarray(())
 
     @property
     def is_model_loaded(self):
@@ -334,16 +344,16 @@ class WalkerModel:
 
         marker_names = tuple(n.to_string() for n in self.model.technicalMarkerNames())
 
-        c3d = ezc3d.c3d(trial)
-        labels = c3d["parameters"]["POINT"]["LABELS"]["value"]
-        c3d_data = c3d["data"]["points"]
-        n_frames = c3d_data.shape[2]
+        self.c3d = ezc3d.c3d(trial)
+        labels = self.c3d["parameters"]["POINT"]["LABELS"]["value"]
+        data = self.c3d["data"]["points"]
+        n_frames = data.shape[2]
         index_in_c3d = np.array(tuple(labels.index(name) if name in labels else -1 for name in marker_names))
         markers_in_c3d = np.ndarray((3, len(index_in_c3d), n_frames)) * np.nan
-        markers_in_c3d[:, index_in_c3d >= 0, :] = c3d_data[:3, index_in_c3d[index_in_c3d >= 0], :] / 1000  # To meter
+        markers_in_c3d[:, index_in_c3d >= 0, :] = data[:3, index_in_c3d[index_in_c3d >= 0], :] / 1000  # To meter
 
         # Create a Kalman filter structure
-        freq = 100  # Hz
+        freq = self.c3d["parameters"]["POINT"]["RATE"]["value"][0]
         params = biorbd.KalmanParam(freq)
         kalman = biorbd.KalmanReconsMarkers(self.model, params)
 
@@ -351,9 +361,92 @@ class WalkerModel:
         q = biorbd.GeneralizedCoordinates(self.model)
         qdot = biorbd.GeneralizedVelocity(self.model)
         qddot = biorbd.GeneralizedAcceleration(self.model)
-        q_recons = np.ndarray((self.model.nbQ(), n_frames))
+        self.q = np.ndarray((self.model.nbQ(), n_frames))
+        self.qdot = np.ndarray((self.model.nbQ(), n_frames))
+        self.qddot = np.ndarray((self.model.nbQ(), n_frames))
         for i in range(n_frames):
             kalman.reconstructFrame(self.model, np.reshape(markers_in_c3d[:, :, i].T, -1), q, qdot, qddot)
-            q_recons[:, i] = q.to_array()
+            self.q[:, i] = q.to_array()
+            self.qdot[:, i] = qdot.to_array()
+            self.qddot[:, i] = qddot.to_array()
 
-        return q_recons
+        self.is_kinematic_reconstructed = True
+        return self.q
+
+    @property
+    def joint_angle_names(self) -> tuple[str, ...]:
+        return (
+            "LHip",
+            "LKnee",
+            "LAnkle",
+            "LAbsAnkle",
+            "RHip",
+            "RKnee",
+            "RAnkle",
+            "RAbsAnkle",
+            "LShoulder",
+            "LElbow",
+            "LWrist",
+            "RShoulder",
+            "RElbow",
+            "RWrist",
+            "LNeck",
+            "RNeck",
+            "LSpine",
+            "RSpine",
+            "LHead",
+            "RHead",
+            "LThorax",
+            "RThorax",
+            "LPelvis",
+            "RPelvis",
+        )
+
+    def to_c3d(self):
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("Kinematics should be reconstructed before writing to c3d. "
+                               "Please call 'kinematic_reconstruction'")
+
+        c3d = ezc3d.c3d()
+
+        # Fill it with points, angles, power, force, moment
+        c3d['parameters']['POINT']['RATE']['value'] = [int(self.c3d["parameters"]["POINT"]["RATE"]["value"][0])]
+        point_names = [name.to_string() for name in self.model.markerNames()]
+        point_names.extend(suffix_to_all(self.joint_angle_names, "Angles"))
+        point_names.extend(suffix_to_all(self.joint_angle_names, "Power"))
+        point_names.extend(suffix_to_all(self.joint_angle_names, "Force"))
+        point_names.extend(suffix_to_all(self.joint_angle_names, "Moment"))
+
+        # Transfer the marker data to the new c3d
+        c3d['parameters']['POINT']['LABELS']['value'] = point_names
+        n_frame = self.c3d["header"]["points"]["last_frame"] - self.c3d["header"]["points"]["first_frame"] + 1
+        data = np.ndarray((4, len(point_names), n_frame)) * np.nan
+        data[3, ...] = 1
+        for i, name_in_c3d in enumerate(self.c3d["parameters"]["POINT"]["LABELS"]["value"]):
+            if name_in_c3d[0] == "*":
+                continue
+            # Make sure it is in the right order
+            data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
+        # Todo: put data in Angles, Power, Force and Moment
+
+        # Dispatch the analog data
+        c3d['parameters']['ANALOG']['RATE']['value'][0] = self.c3d['parameters']['ANALOG']['RATE']['value'][0]
+        # TODO: RENDU ICI
+        c3d['parameters']['ANALOG']['LABELS']['value'] = (
+        'analog1', 'analog2', 'analog3', 'analog4', 'analog5', 'analog6')
+        c3d['data']['analogs'] = np.random.rand(1, 6, 1000)
+        c3d['data']['analogs'][0, 0, :] = 4
+        c3d['data']['analogs'][0, 1, :] = 5
+        c3d['data']['analogs'][0, 2, :] = 6
+        c3d['data']['analogs'][0, 3, :] = 7
+        c3d['data']['analogs'][0, 4, :] = 8
+        c3d['data']['analogs'][0, 5, :] = 9
+
+        # Add a custom parameter to the POINT group
+        c3d.add_parameter("POINT", "newParam", [1, 2, 3])
+
+        # Add a custom parameter a new group
+        c3d.add_parameter("NewGroup", "newParam", ["MyParam1", "MyParam2"])
+
+        # Write the data
+        c3d.write("path_to_c3d.c3d")
