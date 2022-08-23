@@ -374,33 +374,59 @@ class WalkerModel:
         return self.q
 
     @property
-    def joint_angle_names(self) -> tuple[str, ...]:
-        return (
-            "LHip",
-            "LKnee",
-            "LAnkle",
-            "LAbsAnkle",
-            "RHip",
-            "RKnee",
-            "RAnkle",
-            "RAbsAnkle",
-            "LShoulder",
-            "LElbow",
-            "LWrist",
-            "RShoulder",
-            "RElbow",
-            "RWrist",
-            "LNeck",
-            "RNeck",
-            "LSpine",
-            "RSpine",
-            "LHead",
-            "RHead",
-            "LThorax",
-            "RThorax",
-            "LPelvis",
-            "RPelvis",
-        )
+    def joint_angle_names(self) -> dict[str, int]:
+        return {
+            "LHip": 36,  # Left hip flexion
+            "LKnee": 39,  # Left knee flexion
+            "LAnkle": 42,  # Left ankle flexion
+            "LAbsAnkle": 42,  # Left ankle flexion
+            "RHip": 27,  # Right hip flexion
+            "RKnee": 30,  # Right knee flexion
+            "RAnkle": 33,  # Right ankle flexion
+            "RAbsAnkle": 33,  # Right ankle flexion
+            "LShoulder": 18,  # Left shoulder flexion
+            "LElbow": 21,  # Left elbow flexion
+            "LWrist": 24,  # Left wrist flexion
+            "RShoulder": 9,  # Right shoulder flexion
+            "RElbow": 12,  # Right elbow flexion
+            "RWrist": 15,  # Right wrist flexion
+            "LNeck": None,
+            "RNeck": None,
+            "LSpine": None,
+            "RSpine": None,
+            "LHead": None,
+            "RHead": None,
+            "LThorax": 6,  # Trunk flexion
+            "RThorax": 6,  # Trunk flexion
+            "LPelvis": 3,  # Pelvis flexion
+            "RPelvis": 3,  # Pelvis flexion
+        }
+
+    def _find_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
+        """
+        Returns
+        -------
+        number of events (int)
+            The number of events
+        event_contexts (tuple[str, ...])
+            If a specific event arrived the on 'Left' or on the 'Right'
+        event_labels (tuple[str, ...])
+            If a specific event is a 'Foot Strike' or a Foot Off'
+        event_times (tuple[tuple[float, ...], tuple[float]])
+            The time for a specific event. the first row should be all zeros for some unknown reason
+        """
+
+        def find_foot_strikes():
+            pass
+        find_foot_strikes()
+
+        events_number = 3
+        events_contexts = ("Left", "Right", "Left")
+        events_labels = ("Foot Strike", "Foot Strike", "Foot Off")
+        events_times = ((0, 0, 0), (-1, -2, -3))
+
+        return events_number, events_contexts, events_labels, events_times
+
 
     def to_c3d(self):
         if not self.is_kinematic_reconstructed:
@@ -410,15 +436,17 @@ class WalkerModel:
         c3d = ezc3d.c3d()
 
         # Fill it with points, angles, power, force, moment
-        c3d['parameters']['POINT']['RATE']['value'] = [int(self.c3d["parameters"]["POINT"]["RATE"]["value"][0])]
+        c3d["parameters"]["POINT"]["RATE"]["value"] = [int(self.c3d["parameters"]["POINT"]["RATE"]["value"][0])]
+        c3d.add_parameter("POINT", "ANGLE_UNITS", ["deg"])
         point_names = [name.to_string() for name in self.model.markerNames()]
-        point_names.extend(suffix_to_all(self.joint_angle_names, "Angles"))
-        point_names.extend(suffix_to_all(self.joint_angle_names, "Power"))
-        point_names.extend(suffix_to_all(self.joint_angle_names, "Force"))
-        point_names.extend(suffix_to_all(self.joint_angle_names, "Moment"))
+        point_names.extend(suffix_to_all(tuple(self.joint_angle_names.keys()), "Angles"))
+        point_names.extend(suffix_to_all(tuple(self.joint_angle_names.keys()), "Power"))
+        point_names.extend(suffix_to_all(tuple(self.joint_angle_names.keys()), "Force"))
+        point_names.extend(suffix_to_all(tuple(self.joint_angle_names.keys()), "Moment"))
+        c3d["parameters"]["POINT"]["UNITS"] = self.c3d["parameters"]["POINT"]["UNITS"]
 
         # Transfer the marker data to the new c3d
-        c3d['parameters']['POINT']['LABELS']['value'] = point_names
+        c3d["parameters"]["POINT"]["LABELS"]["value"] = point_names
         n_frame = self.c3d["header"]["points"]["last_frame"] - self.c3d["header"]["points"]["first_frame"] + 1
         data = np.ndarray((4, len(point_names), n_frame)) * np.nan
         data[3, ...] = 1
@@ -427,26 +455,31 @@ class WalkerModel:
                 continue
             # Make sure it is in the right order
             data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
-        # Todo: put data in Angles, Power, Force and Moment
 
-        # Dispatch the analog data
-        c3d['parameters']['ANALOG']['RATE']['value'][0] = self.c3d['parameters']['ANALOG']['RATE']['value'][0]
-        # TODO: RENDU ICI
-        c3d['parameters']['ANALOG']['LABELS']['value'] = (
-        'analog1', 'analog2', 'analog3', 'analog4', 'analog5', 'analog6')
-        c3d['data']['analogs'] = np.random.rand(1, 6, 1000)
-        c3d['data']['analogs'][0, 0, :] = 4
-        c3d['data']['analogs'][0, 1, :] = 5
-        c3d['data']['analogs'][0, 2, :] = 6
-        c3d['data']['analogs'][0, 3, :] = 7
-        c3d['data']['analogs'][0, 4, :] = 8
-        c3d['data']['analogs'][0, 5, :] = 9
+        # Dispatch the kinematics and kinematics
+        # Todo: put data in Power, Force and Moment
+        for joint, idx in self.joint_angle_names.items():
+            if idx is None:
+                continue
+            data[:, point_names.index(f"{joint}Angles"), :] = self.q[idx, :]
+        c3d["data"]["points"] = data
 
-        # Add a custom parameter to the POINT group
-        c3d.add_parameter("POINT", "newParam", [1, 2, 3])
+        # Find and add events
+        events_number, events_contexts, events_labels, events_times = self._find_events()
+        c3d.add_parameter("EVENT", "USED", (events_number,))
+        c3d.add_parameter("EVENT", "CONTEXTS", events_contexts)
+        c3d.add_parameter("EVENT", "LABELS", events_labels)
+        c3d.add_parameter("EVENT", "TIMES", events_times)
 
-        # Add a custom parameter a new group
-        c3d.add_parameter("NewGroup", "newParam", ["MyParam1", "MyParam2"])
+        # Dispatch the analog and force_plate data
+        c3d["parameters"]["ANALOG"] = self.c3d["parameters"]["ANALOG"]
+        for i, label in enumerate(self.c3d[ "parameters"]["ANALOG"]["LABELS"]["value"]):
+            label = label.replace("Force.", "")
+            label = label.replace("Moment.", "")
+            c3d["parameters"]["ANALOG"]["LABELS"]["value"][i] = label
+
+        c3d["parameters"]["FORCE_PLATFORM"] = self.c3d["parameters"]["FORCE_PLATFORM"]
+        c3d["data"]["analogs"] = self.c3d["data"]["analogs"]
 
         # Write the data
-        c3d.write("path_to_c3d.c3d")
+        c3d.write("/home/pariterre/Programmation/gaitAnalysisGUI/data/path_to_c3d.c3d")
