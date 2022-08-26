@@ -2,6 +2,10 @@ import biorbd
 from biorbd import KinematicModelGeneric, Axis, SegmentCoordinateSystem
 import ezc3d
 import numpy as np
+from matplotlib import pyplot as plt
+import scipy
+
+from .misc import differentiate
 
 
 def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tuple[str, ...]:
@@ -15,6 +19,7 @@ class WalkerModel:
 
         self.is_kinematic_reconstructed: bool = False
         self.c3d: ezc3d.c3d | None = None
+        self.t: np.ndarray = np.ndarray(())
         self.q: np.ndarray = np.ndarray(())
         self.qdot: np.ndarray = np.ndarray(())
         self.qddot: np.ndarray = np.ndarray(())
@@ -344,7 +349,7 @@ class WalkerModel:
 
         marker_names = tuple(n.to_string() for n in self.model.technicalMarkerNames())
 
-        self.c3d = ezc3d.c3d(trial)
+        self.c3d = ezc3d.c3d(trial, extract_forceplat_data=True)
         labels = self.c3d["parameters"]["POINT"]["LABELS"]["value"]
         data = self.c3d["data"]["points"]
         n_frames = data.shape[2]
@@ -361,6 +366,10 @@ class WalkerModel:
         q = biorbd.GeneralizedCoordinates(self.model)
         qdot = biorbd.GeneralizedVelocity(self.model)
         qddot = biorbd.GeneralizedAcceleration(self.model)
+        frame_rate = self.c3d["header"]["points"]["frame_rate"]
+        first_frame = self.c3d["header"]["points"]["first_frame"]
+        last_frame = self.c3d["header"]["points"]["last_frame"]
+        self.t = np.linspace(first_frame / frame_rate, last_frame / frame_rate, last_frame - first_frame + 1)
         self.q = np.ndarray((self.model.nbQ(), n_frames))
         self.qdot = np.ndarray((self.model.nbQ(), n_frames))
         self.qddot = np.ndarray((self.model.nbQ(), n_frames))
@@ -402,6 +411,15 @@ class WalkerModel:
             "RPelvis": 3,  # Pelvis flexion
         }
 
+    def markers_to_array(self, q: np.ndarray) -> np.ndarray:
+        """
+        Get all markers position from a position q in the format (3 x NMarker x NTime)
+        """
+        markers = np.ndarray((3, self.model.nbMarkers(), len(q)))
+        for i, q_tp in enumerate(q):
+            markers[:, :, i] = np.array([mark.to_array() for mark in self.model.markers(q_tp)]).T
+        return markers
+
     def _find_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
         """
         Returns
@@ -416,9 +434,57 @@ class WalkerModel:
             The time for a specific event. the first row should be all zeros for some unknown reason
         """
 
-        def find_foot_strikes():
-            pass
-        find_foot_strikes()
+        def find_foot_events(heel_marker_name: str, toe_marker_name: str):
+            # The algorithm is to take the lowest velocity of the heel,
+            # then find the first time this velocity hits 0; this is the heel strike.
+            # The maximum velocity after that point is just prior to the toe off. Therefore take the medium point between
+            # highest toe velocity and that point (TODO)
+
+            markers = biorbd.markers_to_array(self.model, self.q)
+            heel_idx = biorbd.marker_index(self.model, heel_marker_name)
+            toe_idx = biorbd.marker_index(self.model, toe_marker_name)
+            heel_height = markers[(2,), heel_idx, :]
+            heel_velocity = differentiate(heel_height, self.t[1] - self.t[0])
+            toe_height = markers[(2,), toe_idx, :]
+            toe_velocity = differentiate(toe_height, self.t[1] - self.t[0])
+
+            t_peaks_strike = []
+            t_peak_preheelstrike = scipy.signal.find_peaks(-heel_velocity[0, :], height=0.5)[0]
+            for i in t_peak_preheelstrike:
+                # find the first time the signal crosses 0 from that lowest point
+                t_peaks_strike.append(i + np.argmax(np.diff(np.sign(heel_velocity[:, i:])) != 0))
+
+            t_peaks_toeoff = scipy.signal.find_peaks(heel_velocity[0, :], height=0.5)[0]
+
+            # plt.plot(self.t, heel_height[0, :])
+            plt.plot(self.t, toe_velocity[0, :])
+            plt.plot(self.t[t_peaks_strike], toe_velocity[0, t_peaks_strike], 'bo')
+            plt.plot(self.t[t_peaks_toeoff], toe_velocity[0, t_peaks_toeoff], 'ro')
+
+
+            f = 0
+            ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
+            force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
+            max_force = max(force_data)
+            plt.plot(self.t, force_data / max_force)
+
+            # f = 1
+            # ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
+            # force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
+            # max_force = max(force_data)
+            # plt.plot(force_data / max_force)
+            #
+            # f = 2
+            # ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
+            # force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
+            # max_force = max(force_data)
+            # plt.plot(force_data / max_force)
+
+
+        # right_foot_strikes = find_foot_events("RTOE")
+        left_foot_strikes = find_foot_events("LHEE", "LTOE")
+
+        plt.show()
 
         events_number = 3
         events_contexts = ("Left", "Right", "Left")
@@ -426,7 +492,6 @@ class WalkerModel:
         events_times = ((0, 0, 0), (-1, -2, -3))
 
         return events_number, events_contexts, events_labels, events_times
-
 
     def to_c3d(self):
         if not self.is_kinematic_reconstructed:
