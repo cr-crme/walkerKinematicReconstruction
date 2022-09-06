@@ -2,7 +2,7 @@ import os
 
 import bioviz
 
-from walker import WalkerModel
+from walker import SimplePlugInGaitModel
 
 # Options
 kinematic_model_file_path = "temporary.bioMod"
@@ -10,8 +10,8 @@ static_trial = "data/pilote/Audrey_19_mai_statique.c3d"
 trial = "data/pilote/Audrey_19_mai_marche4.c3d"
 
 # Generate the personalized kinematic model
-model = WalkerModel()
-model.generate_personalized_model(static_trial, kinematic_model_file_path)
+model = SimplePlugInGaitModel()
+model.personalize_model(static_trial, kinematic_model_file_path)
 
 # Reconstruct the kinematics of a trial
 model.reconstruct_kinematics(trial)

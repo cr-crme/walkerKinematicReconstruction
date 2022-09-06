@@ -1,1 +1,1 @@
-from .model import WalkerModel
+from .model import SimplePlugInGaitModel

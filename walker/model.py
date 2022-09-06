@@ -1,7 +1,6 @@
 import itertools
 
-import biorbd
-from biorbd import KinematicModelGeneric, Axis, SegmentCoordinateSystem
+import biorbd as brbd
 import ezc3d
 import numpy as np
 import scipy
@@ -13,7 +12,7 @@ def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tupl
     return tuple(f"{n}{suffix}" for n in values)
 
 
-class WalkerModel:
+class SimplePlugInGaitModel:
     def __init__(self):
         self.generic_model = self._generate_generic_model()
         self.model = None
@@ -31,19 +30,18 @@ class WalkerModel:
 
     @staticmethod
     def _generate_generic_model():
-        model = KinematicModelGeneric()
+        model = brbd.KinematicModelGeneric()
         model.add_segment(
             "PELVIS",
             translations="xyz",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="PELVIS",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("LPSI", "RPSI", "LASI", "RASI"),
-                first_axis_name=Axis.Name.Y,
+                first_axis_name=brbd.Axis.Name.Y,
                 first_axis_markers=(("LPSI", "RPSI"), ("LASI", "RASI")),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=(("LPSI", "RPSI", "LASI", "RASI"), ("RPSI", "RASI")),
-                axis_to_keep=Axis.Name.Y,
+                axis_to_keep=brbd.Axis.Name.Y,
             ),
         )
         model.add_marker("PELVIS", "LPSI", is_technical=True, is_anatomical=True)
@@ -55,14 +53,13 @@ class WalkerModel:
             "TRUNK",
             parent_name="PELVIS",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="TRUNK",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="CLAV",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=(("T10", "STRN"), ("C7", "CLAV")),
-                second_axis_name=Axis.Name.Y,
+                second_axis_name=brbd.Axis.Name.Y,
                 second_axis_markers=(("T10", "C7"), ("STRN", "CLAV")),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("TRUNK", "T10", is_technical=True, is_anatomical=True)
@@ -74,14 +71,13 @@ class WalkerModel:
         model.add_segment(
             "HEAD",
             parent_name="TRUNK",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="HEAD",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("LBHD", "RBHD", "LFHD", "RFHD"),
-                first_axis_name=Axis.Name.X,
+                first_axis_name=brbd.Axis.Name.X,
                 first_axis_markers=(("LBHD", "LFHD"), ("RBHD", "RFHD")),
-                second_axis_name=Axis.Name.Y,
+                second_axis_name=brbd.Axis.Name.Y,
                 second_axis_markers=(("LBHD", "RBHD"), ("LFHD", "RFHD")),
-                axis_to_keep=Axis.Name.Y,
+                axis_to_keep=brbd.Axis.Name.Y,
             ),
         )
         model.add_marker("HEAD", "LBHD", is_technical=True, is_anatomical=True)
@@ -93,14 +89,13 @@ class WalkerModel:
             "RUPPER_ARM",
             parent_name="TRUNK",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RUPPER_ARM",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="RSHO",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("RELB", "RSHO"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("RWRB", "RWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("RUPPER_ARM", "RSHO", is_technical=True, is_anatomical=True)
@@ -111,14 +106,13 @@ class WalkerModel:
             "RLOWER_ARM",
             parent_name="RUPPER_ARM",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RLOWER_ARM",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="RELB",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=(("RWRB", "RWRA"), "RELB"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("RWRB", "RWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("RLOWER_ARM", "RWRB", is_technical=True, is_anatomical=True)
@@ -128,14 +122,13 @@ class WalkerModel:
             "RHAND",
             parent_name="RLOWER_ARM",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RHAND",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("RWRB", "RWRA"),
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("RFIN", ("RWRB", "RWRA")),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("RWRB", "RWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("RHAND", "RFIN", is_technical=True, is_anatomical=True)
@@ -144,14 +137,13 @@ class WalkerModel:
             "LUPPER_ARM",
             parent_name="TRUNK",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LUPPER_ARM",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="LSHO",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("LELB", "LSHO"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("LWRB", "LWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("LUPPER_ARM", "LSHO", is_technical=True, is_anatomical=True)
@@ -162,14 +154,13 @@ class WalkerModel:
             "LLOWER_ARM",
             parent_name="LUPPER_ARM",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LLOWER_ARM",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="LELB",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=(("LWRB", "LWRA"), "LELB"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("LWRB", "LWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("LLOWER_ARM", "LWRB", is_technical=True, is_anatomical=True)
@@ -179,14 +170,13 @@ class WalkerModel:
             "LHAND",
             parent_name="LLOWER_ARM",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LHAND",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("LWRB", "LWRA"),
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("LFIN", ("LWRB", "LWRA")),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("LWRB", "LWRA"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("LHAND", "LFIN", is_technical=True, is_anatomical=True)
@@ -195,14 +185,13 @@ class WalkerModel:
             "RTHIGH",
             parent_name="PELVIS",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RTHIGH",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="RTROC",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("RKNE", "RTROC"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("RKNM", "RKNE"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("RTHIGH", "RTROC", is_technical=True, is_anatomical=True)
@@ -215,14 +204,13 @@ class WalkerModel:
             "RLEG",
             parent_name="RTHIGH",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RLEG",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("RKNM", "RKNE"),
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=(("RANKM", "RANK"), ("RKNM", "RKNE")),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("RKNM", "RKNE"),
-                axis_to_keep=Axis.Name.X,
+                axis_to_keep=brbd.Axis.Name.X,
             ),
         )
         model.add_marker("RLEG", "RANKM", is_technical=False, is_anatomical=True)
@@ -235,14 +223,13 @@ class WalkerModel:
             "RFOOT",
             parent_name="RLEG",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="RFOOT",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("RANKM", "RANK"),
-                first_axis_name=Axis.Name.X,
+                first_axis_name=brbd.Axis.Name.X,
                 first_axis_markers=("RANKM", "RANK"),
-                second_axis_name=Axis.Name.Y,
+                second_axis_name=brbd.Axis.Name.Y,
                 second_axis_markers=("RHEE", "RTOE"),
-                axis_to_keep=Axis.Name.X,
+                axis_to_keep=brbd.Axis.Name.X,
             ),
         )
         model.add_marker("RFOOT", "RTOE", is_technical=True, is_anatomical=True)
@@ -253,14 +240,13 @@ class WalkerModel:
             "LTHIGH",
             parent_name="PELVIS",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LTHIGH",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers="LTROC",
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=("LKNE", "LTROC"),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("LKNE", "LKNM"),
-                axis_to_keep=Axis.Name.Z,
+                axis_to_keep=brbd.Axis.Name.Z,
             ),
         )
         model.add_marker("LTHIGH", "LTROC", is_technical=True, is_anatomical=True)
@@ -273,14 +259,13 @@ class WalkerModel:
             "LLEG",
             parent_name="LTHIGH",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LLEG",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("LKNM", "LKNE"),
-                first_axis_name=Axis.Name.Z,
+                first_axis_name=brbd.Axis.Name.Z,
                 first_axis_markers=(("LANKM", "LANK"), ("LKNM", "LKNE")),
-                second_axis_name=Axis.Name.X,
+                second_axis_name=brbd.Axis.Name.X,
                 second_axis_markers=("LKNE", "LKNM"),
-                axis_to_keep=Axis.Name.X,
+                axis_to_keep=brbd.Axis.Name.X,
             ),
         )
         model.add_marker("LLEG", "LANKM", is_technical=False, is_anatomical=True)
@@ -293,14 +278,13 @@ class WalkerModel:
             "LFOOT",
             parent_name="LLEG",
             rotations="xyz",
-            segment_coordinate_system=SegmentCoordinateSystem(
-                segment_name="LFOOT",
+            segment_coordinate_system=brbd.SegmentCoordinateSystem(
                 origin_markers=("LANKM", "LANK"),
-                first_axis_name=Axis.Name.X,
+                first_axis_name=brbd.Axis.Name.X,
                 first_axis_markers=("LANK", "LANKM"),
-                second_axis_name=Axis.Name.Y,
+                second_axis_name=brbd.Axis.Name.Y,
                 second_axis_markers=("LHEE", "LTOE"),
-                axis_to_keep=Axis.Name.X,
+                axis_to_keep=brbd.Axis.Name.X,
             ),
         )
         model.add_marker("LFOOT", "LTOE", is_technical=True, is_anatomical=True)
@@ -308,28 +292,23 @@ class WalkerModel:
         model.add_marker("LFOOT", "LHEE", is_technical=True, is_anatomical=True)
         return model
 
-    def generate_personalized_model(
-        self, static_trial_path: str, model_path: str, first_frame: int = 0, last_frame: int = -1
-    ):
+    def _generate_center_of_mass(self):
+        pass
+
+    def personalize_model(self, static_trial: str, model_path: str):
         """
         Collapse the generic model according to the data of the static trial
 
         Parameters
         ----------
-        static_trial_path
-            The path of the c3d file of the static trial
+        static_trial
+            The path of the c3d file of the static trial to create the model from
         model_path
             The path of the generated bioMod file
-        first_frame
-            The first frame of the data to use
-        last_frame
-            The last frame of the data to use
         """
 
-        self.generic_model.generate_personalized(
-            data_path=static_trial_path, save_path=model_path, first_frame=first_frame, last_frame=last_frame
-        )
-        self.model = biorbd.Model(model_path)
+        self.generic_model.generate_personalized(data=brbd.C3dData(static_trial), save_path=model_path)
+        self.model = brbd.Model(model_path)
 
     def reconstruct_kinematics(self, trial: str) -> np.ndarray:
         """
@@ -360,13 +339,13 @@ class WalkerModel:
 
         # Create a Kalman filter structure
         freq = self.c3d["parameters"]["POINT"]["RATE"]["value"][0]
-        params = biorbd.KalmanParam(freq)
-        kalman = biorbd.KalmanReconsMarkers(self.model, params)
+        params = brbd.KalmanParam(freq)
+        kalman = brbd.KalmanReconsMarkers(self.model, params)
 
         # Perform the kalman filter for each frame (the first frame is much longer than the next)
-        q = biorbd.GeneralizedCoordinates(self.model)
-        qdot = biorbd.GeneralizedVelocity(self.model)
-        qddot = biorbd.GeneralizedAcceleration(self.model)
+        q = brbd.GeneralizedCoordinates(self.model)
+        qdot = brbd.GeneralizedVelocity(self.model)
+        qddot = brbd.GeneralizedAcceleration(self.model)
         frame_rate = self.c3d["header"]["points"]["frame_rate"]
         first_frame = self.c3d["header"]["points"]["first_frame"]
         last_frame = self.c3d["header"]["points"]["last_frame"]
@@ -421,7 +400,7 @@ class WalkerModel:
             markers[:, :, i] = np.array([mark.to_array() for mark in self.model.markers(q_tp)]).T
         return markers
 
-    def _find_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
+    def _find_all_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
         """
         Returns
         -------
@@ -441,9 +420,9 @@ class WalkerModel:
             # The maximum heel velocity after that point is prior to the toe off and the highest toe velocity is just
             # after. The toe off is therefore 80% of that distance towards the max velocity
 
-            markers = biorbd.markers_to_array(self.model, self.q)
-            heel_idx = biorbd.marker_index(self.model, heel_marker_name)
-            toe_idx = biorbd.marker_index(self.model, toe_marker_name)
+            markers = brbd.markers_to_array(self.model, self.q)
+            heel_idx = brbd.marker_index(self.model, heel_marker_name)
+            toe_idx = brbd.marker_index(self.model, toe_marker_name)
             heel_height = markers[(2,), heel_idx, :]
             heel_velocity = differentiate(heel_height, self.t[1] - self.t[0])
             toe_height = markers[(2,), toe_idx, :]
@@ -481,7 +460,8 @@ class WalkerModel:
 
         left_foot_events = find_foot_events("LHEE", "LTOE")
         right_foot_events = find_foot_events("RHEE", "RTOE")
-        # From that point, it is assumed that `len(events[0]) == len(events[1])`
+        # From that point, it is assumed that `len(events[0]) == len(events[1])`, that is there are equal number of
+        # foot strikes and toe off
 
         events_number = (len(left_foot_events[0]) + len(right_foot_events[0])) * 2
         events_contexts = ("Left",) * len(left_foot_events[0]) * 2 + ("Right",) * len(right_foot_events[0]) * 2
@@ -524,7 +504,7 @@ class WalkerModel:
             data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
 
         # Dispatch the kinematics and kinematics
-        # Todo: put data in Power, Force and Moment
+        # Todo: put data of Power, Force and Moment
         for joint, idx in self.joint_angle_names.items():
             if idx is None:
                 continue
@@ -532,11 +512,16 @@ class WalkerModel:
         c3d["data"]["points"] = data
 
         # Find and add events
-        events_number, events_contexts, events_labels, events_times = self._find_events()
+        events_number, events_contexts, events_labels, events_times = self._find_all_events()
         c3d.add_parameter("EVENT", "USED", (events_number,))
         c3d.add_parameter("EVENT", "CONTEXTS", events_contexts)
         c3d.add_parameter("EVENT", "LABELS", events_labels)
         c3d.add_parameter("EVENT", "TIMES", events_times)
+
+        # Copy the header
+        for element in self.c3d["header"]:
+            for item in self.c3d["header"][element]:
+                c3d["header"][element][item] = self.c3d["header"][element][item]
 
         # Dispatch the analog and force_plate data
         c3d["parameters"]["ANALOG"] = self.c3d["parameters"]["ANALOG"]
