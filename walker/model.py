@@ -1,8 +1,9 @@
+import itertools
+
 import biorbd
 from biorbd import KinematicModelGeneric, Axis, SegmentCoordinateSystem
 import ezc3d
 import numpy as np
-from matplotlib import pyplot as plt
 import scipy
 
 from .misc import differentiate
@@ -437,8 +438,8 @@ class WalkerModel:
         def find_foot_events(heel_marker_name: str, toe_marker_name: str):
             # The algorithm is to take the lowest velocity of the heel,
             # then find the first time this velocity hits 0; this is the heel strike.
-            # The maximum velocity after that point is just prior to the toe off. Therefore take the medium point between
-            # highest toe velocity and that point (TODO)
+            # The maximum heel velocity after that point is prior to the toe off and the highest toe velocity is just
+            # after. The toe off is therefore 80% of that distance towards the max velocity
 
             markers = biorbd.markers_to_array(self.model, self.q)
             heel_idx = biorbd.marker_index(self.model, heel_marker_name)
@@ -447,50 +448,51 @@ class WalkerModel:
             heel_velocity = differentiate(heel_height, self.t[1] - self.t[0])
             toe_height = markers[(2,), toe_idx, :]
             toe_velocity = differentiate(toe_height, self.t[1] - self.t[0])
+            toe_acceleration = differentiate(toe_velocity, self.t[1] - self.t[0])
 
-            t_peaks_strike = []
-            t_peak_preheelstrike = scipy.signal.find_peaks(-heel_velocity[0, :], height=0.5)[0]
-            for i in t_peak_preheelstrike:
+            t_peaks_heel_strike = []
+            t_peak_pre_heel_strike = scipy.signal.find_peaks(-heel_velocity[0, :], height=0.5)[0]
+            for heel_idx in t_peak_pre_heel_strike:
                 # find the first time the signal crosses 0 from that lowest point
-                t_peaks_strike.append(i + np.argmax(np.diff(np.sign(heel_velocity[:, i:])) != 0))
+                t_peaks_heel_strike.append(heel_idx + np.argmax(np.diff(np.sign(heel_velocity[:, heel_idx:])) != 0))
 
-            t_peaks_toeoff = scipy.signal.find_peaks(heel_velocity[0, :], height=0.5)[0]
+            t_peaks_toe_off = []
+            t_peaks_pre_toe_off = scipy.signal.find_peaks(heel_velocity[0, :], height=0.5)[0]
+            for toe_idx in t_peaks_pre_toe_off:
+                # find the first time the signal crosses 0 from that lowest point
+                t_peaks_post_toe_off = np.argmax(np.diff(np.sign(toe_acceleration[:, toe_idx:])) != 0)
+                t_peaks_toe_off.append(int(toe_idx + 0.8 * t_peaks_post_toe_off))
 
-            # plt.plot(self.t, heel_height[0, :])
-            plt.plot(self.t, toe_velocity[0, :])
-            plt.plot(self.t[t_peaks_strike], toe_velocity[0, t_peaks_strike], 'bo')
-            plt.plot(self.t[t_peaks_toeoff], toe_velocity[0, t_peaks_toeoff], 'ro')
+            # Associate each heel strike with its toe off
+            first_toe_off_idx = -1
+            for i, toe in enumerate(t_peaks_toe_off):
+                if toe > t_peaks_heel_strike[0]:
+                    first_toe_off_idx = i
+                    break
+            last_heel_strike_idx = -1
+            for i, heel in enumerate(reversed(t_peaks_heel_strike)):
+                if heel < t_peaks_toe_off[-1]:
+                    last_heel_strike_idx = len(t_peaks_heel_strike) - i
+                    break
 
+            if first_toe_off_idx == -1 or last_heel_strike_idx == -1:
+                Warning('No heel strikes that correspond to the toe offs were found')
+            return t_peaks_heel_strike[:last_heel_strike_idx], t_peaks_toe_off[first_toe_off_idx:]
 
-            f = 0
-            ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
-            force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
-            max_force = max(force_data)
-            plt.plot(self.t, force_data / max_force)
+        left_foot_events = find_foot_events("LHEE", "LTOE")
+        right_foot_events = find_foot_events("RHEE", "RTOE")
+        # From that point, it is assumed that `len(events[0]) == len(events[1])`
 
-            # f = 1
-            # ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
-            # force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
-            # max_force = max(force_data)
-            # plt.plot(force_data / max_force)
-            #
-            # f = 2
-            # ratio = int(self.c3d["header"]["analogs"]["frame_rate"]/self.c3d["header"]["points"]["frame_rate"])
-            # force_data = self.c3d["data"]["platform"][f]["force"][2, ::ratio]
-            # max_force = max(force_data)
-            # plt.plot(force_data / max_force)
-
-
-        # right_foot_strikes = find_foot_events("RTOE")
-        left_foot_strikes = find_foot_events("LHEE", "LTOE")
-
-        plt.show()
-
-        events_number = 3
-        events_contexts = ("Left", "Right", "Left")
-        events_labels = ("Foot Strike", "Foot Strike", "Foot Off")
-        events_times = ((0, 0, 0), (-1, -2, -3))
-
+        events_number = (len(left_foot_events[0]) + len(right_foot_events[0])) * 2
+        events_contexts = ("Left",) * len(left_foot_events[0]) * 2 + ("Right",) * len(right_foot_events[0]) * 2
+        events_labels = ("Foot Strike", "Foot Off") * int(events_number / 2)
+        events_times = (
+            (0,) * events_number,
+            self.t[np.array(tuple(itertools.chain(  # flatten the left/right, heel strike/toe off
+                *[[heel, toe] for heel, toe in zip(*left_foot_events)] +
+                [[heel, toe] for heel, toe in zip(*right_foot_events)]
+            )))]
+        )
         return events_number, events_contexts, events_labels, events_times
 
     def to_c3d(self):
