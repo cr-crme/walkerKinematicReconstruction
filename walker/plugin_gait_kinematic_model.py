@@ -2,25 +2,33 @@ from biorbd import model_creation
 
 
 class SimplePluginGait(model_creation.GenericBiomechanicalModel):
+    """
+    This is the implementation of the Plugin Gait (from Plug-in Gait Reference Guide
+    https://docs.vicon.com/display/Nexus212/PDF+downloads+for+Vicon+Nexus)
+    """
     def __init__(self):
         super(SimplePluginGait, self).__init__()
         self._define_kinematic_model()
         self._define_dynamic_model()
 
     def _define_kinematic_model(self):
+        # Pelvis is verified
+        # Head is verified
+
         self.add_segment(
             "Pelvis",
             translations="xyz",
             rotations="xyz",
             segment_coordinate_system=model_creation.SegmentCoordinateSystem(
                 origin_markers=("LPSI", "RPSI", "LASI", "RASI"),
-                first_axis_name=model_creation.Axis.Name.Y,
-                first_axis_markers=(("LPSI", "RPSI"), ("LASI", "RASI")),
-                second_axis_name=model_creation.Axis.Name.X,
-                second_axis_markers=(("LPSI", "RPSI", "LASI", "RASI"), ("RPSI", "RASI")),
+                first_axis_name=model_creation.Axis.Name.X,
+                first_axis_markers=(("LPSI", "RPSI"), "RASI"),
+                second_axis_name=model_creation.Axis.Name.Y,
+                second_axis_markers=("LASI", "RASI"),
                 axis_to_keep=model_creation.Axis.Name.Y,
             ),
         )
+        # self.add_marker("Pelvis", "SACR", is_technical=False, is_anatomical=True)
         self.add_marker("Pelvis", "LPSI", is_technical=True, is_anatomical=True)
         self.add_marker("Pelvis", "RPSI", is_technical=True, is_anatomical=True)
         self.add_marker("Pelvis", "LASI", is_technical=True, is_anatomical=True)
@@ -44,8 +52,7 @@ class SimplePluginGait(model_creation.GenericBiomechanicalModel):
         self.add_marker("Thorax", "STRN", is_technical=True, is_anatomical=True)
         self.add_marker("Thorax", "CLAV", is_technical=True, is_anatomical=True)
         self.add_marker("Thorax", "RBAK", is_technical=False, is_anatomical=False)
-    
-        # Head is verified
+
         self.add_segment(
             "Head",
             parent_name="Thorax",
