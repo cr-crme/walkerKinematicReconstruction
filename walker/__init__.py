@@ -1,1 +1,1 @@
-from .model import SimplePlugInGaitModel
+from .biomechanics_tools import BiomechanicsTools
