@@ -171,7 +171,16 @@ class BiomechanicsTools:
         )
         return events_number, events_contexts, events_labels, events_times
 
-    def to_c3d(self):
+    def to_c3d(self, save_path: str) -> None:
+        """
+        Create a Nexus-like c3d file from the reconstructed kinematics
+
+        Parameters
+        ----------
+        save_path
+            The path where to save the c3d
+        """
+
         if not self.is_kinematic_reconstructed:
             raise RuntimeError("Kinematics should be reconstructed before writing to c3d. "
                                "Please call 'kinematic_reconstruction'")
@@ -230,4 +239,4 @@ class BiomechanicsTools:
         c3d["data"]["analogs"] = self.c3d["data"]["analogs"]
 
         # Write the data
-        c3d.write("tata.c3d")
+        c3d.write(save_path)

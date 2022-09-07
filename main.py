@@ -17,7 +17,7 @@ tools.personalize_model(static_trial, kinematic_model_file_path)
 tools.reconstruct_kinematics(trial)
 
 # Write the c3d as if it was the plug in gate output
-tools.to_c3d()
+tools.to_c3d("data/tata.c3d")
 
 # Print the model
 b = bioviz.Viz(kinematic_model_file_path)
