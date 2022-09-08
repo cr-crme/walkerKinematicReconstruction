@@ -72,19 +72,17 @@ class BiomechanicsTools:
 
         return self.q
 
-    def find_feet_events(
-        self
-    ) -> tuple[int, tuple[str, ...], tuple[str, ...], tuple[tuple[float, ...], tuple[float, ...]]]:
+    def find_feet_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], np.ndarray]:
         """
         Returns
         -------
-        number of events (int)
+        number of events int
             The number of events
-        event_contexts (tuple[str, ...])
+        event_contexts tuple[str, ...]
             If a specific event arrived the on 'Left' or on the 'Right'
-        event_labels (tuple[str, ...])
+        event_labels tuple[str, ...]
             If a specific event is a 'Foot Strike' or a Foot Off'
-        event_times (tuple[tuple[float, ...], tuple[float]])
+        event_times np.ndarray
             The time for a specific event. the first row should be all zeros for some unknown reason
         """
 
@@ -162,8 +160,8 @@ class BiomechanicsTools:
         events_number = (len(left_foot_events[0]) + len(right_foot_events[0])) * 2
         events_contexts = ("Left",) * len(left_foot_events[0]) * 2 + ("Right",) * len(right_foot_events[0]) * 2
         events_labels = ("Foot Strike", "Foot Off") * int(events_number / 2)
-        events_times = (
-            (0,) * events_number,
+        events_times = np.ndarray(
+            (0.,) * events_number,
             self.t[np.array(tuple(itertools.chain(  # flatten the left/right, heel strike/toe off
                 *[[heel, toe] for heel, toe in zip(*left_foot_events)] +
                 [[heel, toe] for heel, toe in zip(*right_foot_events)]
