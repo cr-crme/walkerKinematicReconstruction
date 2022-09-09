@@ -1,11 +1,10 @@
 import itertools
 
 import biorbd
-import biorbd as brbd
-from biorbd import model_creation
+from biorbd.model_creation import C3dData
 import ezc3d
 import numpy as np
-import scipy
+from scipy import signal
 
 from .misc import differentiate
 from .plugin_gait_kinematic_model import SimplePluginGait
@@ -46,8 +45,8 @@ class BiomechanicsTools:
             The path of the generated bioMod file
         """
 
-        self.generic_model.write(save_path=model_path, data=model_creation.C3dData(static_trial))
-        self.model = brbd.Model(model_path)
+        self.generic_model.write(save_path=model_path, data=C3dData(static_trial))
+        self.model = biorbd.Model(model_path)
 
     def reconstruct_kinematics(self, trial: str) -> np.ndarray:
         """
@@ -108,9 +107,9 @@ class BiomechanicsTools:
             The 'heel strikes' and 'toe off' event. The number of each is expected to be equal
             """
 
-            markers = brbd.markers_to_array(self.model, self.q)
-            heel_idx = brbd.marker_index(self.model, heel_marker_name)
-            toe_idx = brbd.marker_index(self.model, toe_marker_name)
+            markers = biorbd.markers_to_array(self.model, self.q)
+            heel_idx = biorbd.marker_index(self.model, heel_marker_name)
+            toe_idx = biorbd.marker_index(self.model, toe_marker_name)
             heel_height = markers[(2,), heel_idx, :]
             heel_velocity = differentiate(heel_height, self.t[1] - self.t[0])
             toe_height = markers[(2,), toe_idx, :]
@@ -118,13 +117,13 @@ class BiomechanicsTools:
             toe_acceleration = differentiate(toe_velocity, self.t[1] - self.t[0])
 
             idx_peaks_heel_strike = []
-            idx_peak_pre_heel_strike = scipy.signal.find_peaks(-heel_velocity[0, :], height=0.5)[0]
+            idx_peak_pre_heel_strike = signal.find_peaks(-heel_velocity[0, :], height=0.5)[0]
             for heel_idx in idx_peak_pre_heel_strike:
                 # find the first time the signal crosses 0 from that lowest point
                 idx_peaks_heel_strike.append(heel_idx + np.argmax(np.diff(np.sign(heel_velocity[:, heel_idx:])) != 0))
 
             idx_peaks_toe_off = []
-            t_peaks_pre_toe_off = scipy.signal.find_peaks(heel_velocity[0, :], height=0.5)[0]
+            t_peaks_pre_toe_off = signal.find_peaks(heel_velocity[0, :], height=0.5)[0]
             for toe_idx in t_peaks_pre_toe_off:
                 # find the first time the signal crosses 0 from that lowest point
                 idx_peaks_post_toe_off = np.argmax(np.diff(np.sign(toe_acceleration[:, toe_idx:])) != 0)
@@ -160,12 +159,12 @@ class BiomechanicsTools:
         events_number = (len(left_foot_events[0]) + len(right_foot_events[0])) * 2
         events_contexts = ("Left",) * len(left_foot_events[0]) * 2 + ("Right",) * len(right_foot_events[0]) * 2
         events_labels = ("Foot Strike", "Foot Off") * int(events_number / 2)
-        events_times = np.ndarray(
-            (0.,) * events_number,
+        events_times = np.array(
+            ((0.,) * events_number,
             self.t[np.array(tuple(itertools.chain(  # flatten the left/right, heel strike/toe off
                 *[[heel, toe] for heel, toe in zip(*left_foot_events)] +
                 [[heel, toe] for heel, toe in zip(*right_foot_events)]
-            )))]
+            )))])
         )
         return events_number, events_contexts, events_labels, events_times
 
@@ -201,7 +200,7 @@ class BiomechanicsTools:
         data = np.ndarray((4, len(point_names), n_frame)) * np.nan
         data[3, ...] = 1
         for i, name_in_c3d in enumerate(self.c3d["parameters"]["POINT"]["LABELS"]["value"]):
-            if name_in_c3d[0] == "*":
+            if name_in_c3d[0] == "*" or name_in_c3d not in point_names:
                 continue
             # Make sure it is in the right order
             data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
