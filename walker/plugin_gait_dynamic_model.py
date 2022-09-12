@@ -117,7 +117,7 @@ class PlugInGaitDynamicModel:
         idx_distal = self.marker_names.index(table.marker_names[1])
 
         # Compute the Euclidian distance between the two positions
-        return np.linalg.norm(marker_positions[:, idx_distal] - marker_positions[:, idx_proximal])
+        return np.linalg.norm(marker_positions[:3, idx_distal] - marker_positions[:3, idx_proximal])
 
     def segment_center_of_mass(self, segment: str, inverse_proximal: bool = False):
         # This method will compute the length of the required segment based on the biorbd model and required markers
