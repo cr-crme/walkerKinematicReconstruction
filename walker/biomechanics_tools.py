@@ -7,7 +7,7 @@ import numpy as np
 from scipy import signal
 
 from .misc import differentiate
-from .plugin_gait_kinematic_model import SimplePluginGait
+from .plugin_gait import SimplePluginGait
 
 
 def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tuple[str, ...]:
@@ -15,8 +15,8 @@ def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tupl
 
 
 class BiomechanicsTools:
-    def __init__(self):
-        self.generic_model = SimplePluginGait()
+    def __init__(self, body_mass):
+        self.generic_model = SimplePluginGait(body_mass)
         self.model = None
 
         self.is_kinematic_reconstructed: bool = False

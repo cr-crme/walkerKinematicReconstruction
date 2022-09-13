@@ -10,7 +10,7 @@ static_trial = "data/pilote/Audrey_19_mai_statique.c3d"
 trial = "data/pilote/Audrey_19_mai_marche4.c3d"
 
 # Generate the personalized kinematic model
-tools = BiomechanicsTools()
+tools = BiomechanicsTools(body_mass=100)
 tools.personalize_model(static_trial, kinematic_model_file_path)
 
 # Reconstruct the kinematics of a trial
