@@ -2,7 +2,7 @@ from biorbd.model_creation import Axis, BiomechanicalModel, SegmentCoordinateSys
 import numpy as np
 
 
-def chord_function(offset, known_center_of_rotation, center_of_rotation_marker, plane_marker):
+def chord_function(offset, known_center_of_rotation, center_of_rotation_marker, plane_marker, direction: int = 1):
     n_frames = offset.shape[0]
 
     # Create a coordinate system from the markers
@@ -25,7 +25,7 @@ def chord_function(offset, known_center_of_rotation, center_of_rotation_marker, 
     # To compute this, project in the rt knowing that by construction, known_center_of_rotation is at 0, 0, 0
     # and center_of_rotation_marker is at a diameter length on y
     diameter = np.linalg.norm(known_center_of_rotation[:3, :] - center_of_rotation_marker[:3, :], axis=0)
-    x = offset * np.sqrt(diameter**2 - offset**2) / diameter
+    x = offset * direction * np.sqrt(diameter**2 - offset**2) / diameter
     y = (diameter**2 - offset**2) / diameter
 
     # project the computed point in the global reference frame
@@ -71,7 +71,9 @@ class SimplePluginGait(BiomechanicalModel):
         shoulder_offset: float = None,
         elbow_width: float = None,
         wrist_width: float = None,
-        hand_thickness: float = None
+        hand_thickness: float = None,
+        leg_length: dict[str, float] = None,
+        ankle_width: float = None,
     ):
         """
         Parameters
@@ -82,26 +84,40 @@ class SimplePluginGait(BiomechanicalModel):
         elbow_width
             The measured width of the elbow. If None is provided 115% of the distance between WRA and WRB is used
         wrist_width
-            The measured widht of the wrist. If None is provided, 2cm is used
+            The measured width of the wrist. If None is provided, 2cm is used
         hand_thickness
             The measured thickness of the hand. If None is provided, 1cm is used
+        leg_length
+            The measured leg length in a dict["R"] or dict["L"]. If None is provided, the height of the TROC is
+            used (therefore assuming the subject is standing upright during the static trial)
+        ankle_width
+            The measured ankle width. If None is provided, the distance between ANK and HEE is used.
+
+        Since more markers are used in our version (namely Knee medial and ankle medial), the KJC and AJC were
+        simplified to be the mean of these marker with their respective lateral markers. Hence, 'ankle_width'
+        is no more useful
         """
         super(SimplePluginGait, self).__init__()
         self.shoulder_offset = shoulder_offset
         self.elbow_width = elbow_width
         self.wrist_width = wrist_width
         self.hand_thickness = hand_thickness
+        self.leg_length = leg_length
+        self.ankle_width = ankle_width
 
         self._define_kinematic_model()
         self._define_dynamic_model()
 
     def _define_kinematic_model(self):
-        # Pelvis is verified
-        # Thorax is verified
-        # Head is verified
-        # Humerus is verified
-        # Radius is verified
-        # Hand is verified (but is sketchy...)
+        # Pelvis: verified
+        # Thorax: verified
+        # Head: verified
+        # Humerus: verified
+        # Radius: verified
+        # Hand: Unsure if I did the correct thing
+        # Femur: verified
+        # Knee: I did not understand what is done for KJC, I used mid-point of 'KNM' and 'KNE'
+        # Ankle: As for knee, we have access to a much easier medial marker (ANKM), so it was used instead
 
         self.add_segment(
             "Pelvis",
@@ -163,16 +179,16 @@ class SimplePluginGait(BiomechanicalModel):
             parent_name="Thorax",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: self._humerus_center_of_rotation(m, kc, "R"),
+                origin=lambda m, kc: self._humerus_joint_center(m, kc, "R"),
                 first_axis=Axis(
                     Axis.Name.Z,
                     start=lambda m, kc: self._elbow_joint_center(m, kc, "R"),
-                    end=lambda m, kc: self._humerus_center_of_rotation(m, kc, "R")
+                    end=lambda m, kc: self._humerus_joint_center(m, kc, "R")
                 ),
                 second_axis=Axis(
                     Axis.Name.X,
-                    start=lambda m, kc: self._wrist_joint_center(m, kc, "R"),
-                    end=lambda m, kc: self._elbow_joint_center(m, kc, "R")
+                    start=lambda m, kc: self._elbow_joint_center(m, kc, "R"),
+                    end=lambda m, kc: self._wrist_joint_center(m, kc, "R")
                 ),
                 axis_to_keep=Axis.Name.Z,
             ),
@@ -194,8 +210,8 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 second_axis=Axis(
                     Axis.Name.Y,
-                    start=lambda m, kc: kc.segments["RHumerus"].segment_coordinate_system.scs[:, 3, :],
-                    end=lambda m, kc: kc.segments["RHumerus"].segment_coordinate_system.scs[:, 1, :],
+                    start=lambda m, kc: kc["RHumerus"].segment_coordinate_system.scs[:, 3, :],
+                    end=lambda m, kc: kc["RHumerus"].segment_coordinate_system.scs[:, 1, :],
                 ),
                 axis_to_keep=Axis.Name.Z,
             ),
@@ -221,153 +237,185 @@ class SimplePluginGait(BiomechanicalModel):
         self.add_marker("RHand", "RFIN", is_technical=True, is_anatomical=True)
 
         self.add_segment(
-            "LUPPER_ARM",
+            "LHumerus",
             parent_name="Thorax",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin="LSHO",
-                first_axis=Axis(Axis.Name.Z, start="LELB", end="LSHO"),
-                second_axis=Axis(Axis.Name.X, start="LWRB", end="LWRA"),
+                origin=lambda m, kc: self._humerus_joint_center(m, kc, "L"),
+                first_axis=Axis(
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._elbow_joint_center(m, kc, "L"),
+                    end=lambda m, kc: self._humerus_joint_center(m, kc, "L")
+                ),
+                second_axis=Axis(
+                    Axis.Name.X,
+                    start=lambda m, kc: self._elbow_joint_center(m, kc, "L"),
+                    end=lambda m, kc: self._wrist_joint_center(m, kc, "L"),
+                ),
                 axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("LUPPER_ARM", "LSHO", is_technical=True, is_anatomical=True)
-        self.add_marker("LUPPER_ARM", "LELB", is_technical=True, is_anatomical=True)
-        self.add_marker("LUPPER_ARM", "LHUM", is_technical=True, is_anatomical=False)
+        self.add_marker("LHumerus", "LSHO", is_technical=True, is_anatomical=True)
+        self.add_marker("LHumerus", "LELB", is_technical=True, is_anatomical=True)
+        self.add_marker("LHumerus", "LHUM", is_technical=True, is_anatomical=False)
 
         self.add_segment(
-            "LLOWER_ARM",
-            parent_name="LUPPER_ARM",
+            "LRadius",
+            parent_name="LHumerus",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin="LELB",
-                first_axis=Axis(Axis.Name.Z, start=lambda m, kc: (m["LWRB"] + m["LWRA"]) / 2, end="LELB"),
-                second_axis=Axis(Axis.Name.X, start="LWRB", end="LWRA"),
+                origin=lambda m, kc: self._elbow_joint_center(m, kc, "L"),
+                first_axis=Axis(
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._wrist_joint_center(m, kc, "L"),
+                    end=lambda m, kc: self._elbow_joint_center(m, kc, "L")
+                ),
+                second_axis=Axis(
+                    Axis.Name.Y,
+                    start=lambda m, kc: kc["LHumerus"].segment_coordinate_system.scs[:, 3, :],
+                    end=lambda m, kc: kc["LHumerus"].segment_coordinate_system.scs[:, 1, :],
+                ),
                 axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("LLOWER_ARM", "LWRB", is_technical=True, is_anatomical=True)
-        self.add_marker("LLOWER_ARM", "LWRA", is_technical=True, is_anatomical=True)
+        self.add_marker("LRadius", "LWRB", is_technical=True, is_anatomical=True)
+        self.add_marker("LRadius", "LWRA", is_technical=True, is_anatomical=True)
 
         self.add_segment(
-            "LHAND",
-            parent_name="LLOWER_ARM",
+            "LHand",
+            parent_name="LRadius",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: (m["LWRB"] + m["LWRA"]) / 2,
-                first_axis=Axis(Axis.Name.Z, start="LFIN", end=lambda m, kc: (m["LWRB"] + m["LWRA"]) / 2),
-                second_axis=Axis(Axis.Name.X, start="LWRB", end="LWRA"),
+                origin=lambda m, kc: self._hand_origin(m, kc, "L"),
+                first_axis=Axis(
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._hand_origin(m, kc, "L"),
+                    end=lambda m, kc: self._wrist_joint_center(m, kc, "L")
+                ),
+                second_axis=Axis(Axis.Name.Y, start="LWRB", end="LWRA"),
                 axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("LHAND", "LFIN", is_technical=True, is_anatomical=True)
+        self.add_marker("LHand", "LFIN", is_technical=True, is_anatomical=True)
 
         self.add_segment(
-            "RTHIGH",
+            "RFemur",
             parent_name="Pelvis",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin="RTROC",
-                first_axis=Axis(Axis.Name.Z, start="RKNE", end="RTROC"),
-                second_axis=Axis(Axis.Name.X, start="RKNM", end="RKNE"),
+                origin=lambda m, kc: self._hip_joint_center(m, kc, "R"),
+                first_axis=Axis(
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._knee_joint_center(m, kc, "R"),
+                    end=lambda m, kc: self._hip_joint_center(m, kc, "R")
+                ),
+                second_axis=self._knee_axis("R"),
                 axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("RTHIGH", "RTROC", is_technical=True, is_anatomical=True)
-        self.add_marker("RTHIGH", "RKNE", is_technical=True, is_anatomical=True)
-        self.add_marker("RTHIGH", "RKNM", is_technical=False, is_anatomical=True)
-        self.add_marker("RTHIGH", "RTHI", is_technical=True, is_anatomical=False)
-        self.add_marker("RTHIGH", "RTHID", is_technical=True, is_anatomical=False)
+        self.add_marker("RFemur", "RTROC", is_technical=True, is_anatomical=True)
+        self.add_marker("RFemur", "RKNE", is_technical=True, is_anatomical=True)
+        self.add_marker("RFemur", "RKNM", is_technical=False, is_anatomical=True)
+        self.add_marker("RFemur", "RTHI", is_technical=True, is_anatomical=False)
+        self.add_marker("RFemur", "RTHID", is_technical=True, is_anatomical=False)
 
         self.add_segment(
-            "RLEG",
-            parent_name="RTHIGH",
+            "RTibia",
+            parent_name="RFemur",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: (m["RKNM"] + m["RKNE"]) / 2,
+                origin=lambda m, kc: self._knee_joint_center(m, kc, "R"),
                 first_axis=Axis(
-                    Axis.Name.Z, start=lambda m, kc: (m["RANKM"] + m["RANK"]) / 2, end=lambda m, kc: (m["RKNM"] + m["RKNE"]) / 2
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._ankle_joint_center(m, kc, "R"),
+                    end=lambda m, kc: self._knee_joint_center(m, kc, "R")
                 ),
-                second_axis=Axis(Axis.Name.X, start="RKNM", end="RKNE"),
-                axis_to_keep=Axis.Name.X,
+                second_axis=self._knee_axis("R"),
+                axis_to_keep=Axis.Name.Y,
             ),
         )
-        self.add_marker("RLEG", "RANKM", is_technical=False, is_anatomical=True)
-        self.add_marker("RLEG", "RANK", is_technical=True, is_anatomical=True)
-        self.add_marker("RLEG", "RTIBP", is_technical=True, is_anatomical=False)
-        self.add_marker("RLEG", "RTIB", is_technical=True, is_anatomical=False)
-        self.add_marker("RLEG", "RTIBD", is_technical=True, is_anatomical=False)
+        self.add_marker("RTibia", "RANKM", is_technical=False, is_anatomical=True)
+        self.add_marker("RTibia", "RANK", is_technical=True, is_anatomical=True)
+        self.add_marker("RTibia", "RTIBP", is_technical=True, is_anatomical=False)
+        self.add_marker("RTibia", "RTIB", is_technical=True, is_anatomical=False)
+        self.add_marker("RTibia", "RTIBD", is_technical=True, is_anatomical=False)
 
         self.add_segment(
-            "RFOOT",
-            parent_name="RLEG",
+            "RFoot",
+            parent_name="RTibia",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: (m["RANKM"] + m["RANK"]) / 2,
-                first_axis=Axis(Axis.Name.X, start="RANKM", end="RANK"),
-                second_axis=Axis(Axis.Name.Y, start="RHEE", end="RTOE"),
-                axis_to_keep=Axis.Name.X,
+                origin=lambda m, kc: self._ankle_joint_center(m, kc, "R"),
+                first_axis=self._knee_axis("R"),
+                second_axis=Axis(Axis.Name.Z, start="RHEE", end="RTOE"),
+                axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("RFOOT", "RTOE", is_technical=True, is_anatomical=True)
-        self.add_marker("RFOOT", "R5MH", is_technical=True, is_anatomical=True)
-        self.add_marker("RFOOT", "RHEE", is_technical=True, is_anatomical=True)
+        self.add_marker("RFoot", "RTOE", is_technical=True, is_anatomical=True)
+        self.add_marker("RFoot", "R5MH", is_technical=True, is_anatomical=True)
+        self.add_marker("RFoot", "RHEE", is_technical=True, is_anatomical=True)
 
         self.add_segment(
-            "LTHIGH",
+            "LFemur",
             parent_name="Pelvis",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin="LTROC",
-                first_axis=Axis(Axis.Name.Z, start="LKNE", end="LTROC"),
-                second_axis=Axis(Axis.Name.X, start="LKNE", end="LKNM"),
+                origin=lambda m, kc: self._hip_joint_center(m, kc, "L"),
+                first_axis=Axis(
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._knee_joint_center(m, kc, "L"),
+                    end=lambda m, kc: self._hip_joint_center(m, kc, "L")
+                ),
+                second_axis=self._knee_axis("L"),
                 axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("LTHIGH", "LTROC", is_technical=True, is_anatomical=True)
-        self.add_marker("LTHIGH", "LKNE", is_technical=True, is_anatomical=True)
-        self.add_marker("LTHIGH", "LKNM", is_technical=False, is_anatomical=True)
-        self.add_marker("LTHIGH", "LTHI", is_technical=True, is_anatomical=False)
-        self.add_marker("LTHIGH", "LTHID", is_technical=True, is_anatomical=False)
+        self.add_marker("LFemur", "LTROC", is_technical=True, is_anatomical=True)
+        self.add_marker("LFemur", "LKNE", is_technical=True, is_anatomical=True)
+        self.add_marker("LFemur", "LKNM", is_technical=False, is_anatomical=True)
+        self.add_marker("LFemur", "LTHI", is_technical=True, is_anatomical=False)
+        self.add_marker("LFemur", "LTHID", is_technical=True, is_anatomical=False)
 
         self.add_segment(
-            "LLEG",
-            parent_name="LTHIGH",
+            "LTibia",
+            parent_name="LFemur",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: (m["LKNM"] + m["LKNE"]) / 2,
+                origin=lambda m, kc: self._knee_joint_center(m, kc, "L"),
                 first_axis=Axis(
-                    Axis.Name.Z, start=lambda m, kc: (m["LANKM"] + m["LANK"]) / 2, end=lambda m, kc: (m["LKNM"] + m["LKNE"]) / 2
+                    Axis.Name.Z,
+                    start=lambda m, kc: self._ankle_joint_center(m, kc, "L"),
+                    end=lambda m, kc: self._knee_joint_center(m, kc, "L")
                 ),
-                second_axis=Axis(Axis.Name.X, start="LKNE", end="LKNM"),
-                axis_to_keep=Axis.Name.X,
+                second_axis=self._knee_axis("L"),
+                axis_to_keep=Axis.Name.Y,
             ),
         )
-        self.add_marker("LLEG", "LANKM", is_technical=False, is_anatomical=True)
-        self.add_marker("LLEG", "LANK", is_technical=True, is_anatomical=True)
-        self.add_marker("LLEG", "LTIBP", is_technical=True, is_anatomical=False)
-        self.add_marker("LLEG", "LTIB", is_technical=True, is_anatomical=False)
-        self.add_marker("LLEG", "LTIBD", is_technical=True, is_anatomical=False)
+        self.add_marker("LTibia", "LANKM", is_technical=False, is_anatomical=True)
+        self.add_marker("LTibia", "LANK", is_technical=True, is_anatomical=True)
+        self.add_marker("LTibia", "LTIBP", is_technical=True, is_anatomical=False)
+        self.add_marker("LTibia", "LTIB", is_technical=True, is_anatomical=False)
+        self.add_marker("LTibia", "LTIBD", is_technical=True, is_anatomical=False)
 
         self.add_segment(
-            "LFOOT",
-            parent_name="LLEG",
+            "LFoot",
+            parent_name="LTibia",
             rotations="xyz",
             segment_coordinate_system=SegmentCoordinateSystem(
-                origin=lambda m, kc: (m["LANKM"] + m["LANK"]) / 2,
-                first_axis=Axis(Axis.Name.X, start="LANK", end="LANKM"),
-                second_axis=Axis(Axis.Name.Y, start="LHEE", end="LTOE"),
-                axis_to_keep=Axis.Name.X,
+                origin=lambda m, kc: self._ankle_joint_center(m, kc, "L"),
+                first_axis=self._knee_axis("L"),
+                second_axis=Axis(Axis.Name.Z, start="LHEE", end="LTOE"),
+                axis_to_keep=Axis.Name.Z,
             ),
         )
-        self.add_marker("LFOOT", "LTOE", is_technical=True, is_anatomical=True)
-        self.add_marker("LFOOT", "L5MH", is_technical=True, is_anatomical=True)
-        self.add_marker("LFOOT", "LHEE", is_technical=True, is_anatomical=True)
+        self.add_marker("LFoot", "LTOE", is_technical=True, is_anatomical=True)
+        self.add_marker("LFoot", "L5MH", is_technical=True, is_anatomical=True)
+        self.add_marker("LFoot", "LHEE", is_technical=True, is_anatomical=True)
 
     def _define_dynamic_model(self):
         pass
 
-    def _humerus_center_of_rotation(self, m: dict, kc: KinematicChain, side: str) -> np.ndarray:
+    def _humerus_joint_center(self, m: dict, kc: KinematicChain, side: str) -> np.ndarray:
         """
         This is the implementation of the 'Shoulder joint center, p.69'.
 
@@ -385,8 +433,8 @@ class SimplePluginGait(BiomechanicalModel):
         The position of the origin of the humerus
         """
 
-        thorax_origin = kc.segments["Thorax"].segment_coordinate_system.scs[:, 3, :]
-        thorax_x_axis = kc.segments["Thorax"].segment_coordinate_system.scs[:, 0, :]
+        thorax_origin = kc["Thorax"].segment_coordinate_system.scs[:, 3, :]
+        thorax_x_axis = kc["Thorax"].segment_coordinate_system.scs[:, 0, :]
         thorax_to_sho_axis = m[f"{side}SHO"] - thorax_origin
         shoulder_wand = np.cross(thorax_to_sho_axis[:3, :], thorax_x_axis[:3, :], axis=0)
         shoulder_offset = self.shoulder_offset if self.shoulder_offset is not None else 0.17 * (m[f"{side}SHO"] - m[f"{side}ELB"])[2, :]
@@ -411,7 +459,7 @@ class SimplePluginGait(BiomechanicalModel):
         The position of the origin of the elbow
         """
 
-        shoulder_origin = self._humerus_center_of_rotation(m, kc, side)
+        shoulder_origin = self._humerus_joint_center(m, kc, side)
         elbow_marker = m[f"{side}ELB"]
         wrist_marker = (m[f"{side}WRA"] + m[f"{side}WRB"]) / 2
 
@@ -470,6 +518,94 @@ class SimplePluginGait(BiomechanicalModel):
         wrist_bar_center = project_point_on_line(m[f"{side}WRA"], m[f"{side}WRB"], elbow_center)
 
         return chord_function(hand_offset, wrist_joint_center, fin_marker, wrist_bar_center)
+
+    def _hip_joint_center(self, m, kc: KinematicChain, side: str) -> np.ndarray:
+        """
+        Compute the hip joint center. The LegLength is not provided, the height of the TROC is used (therefore assuming
+        the subject is standing upright during the static trial)
+
+        Parameters
+        ----------
+        m
+            The dictionary of marker positions
+        kc
+            The kinematic chain as stands at that particular time
+        side
+            If the markers are from the right ("R") or left ("L") side
+        """
+
+        inter_asis = np.mean(np.linalg.norm(m["LASI"][:3, :] - m["RASI"][:3, :], axis=0))
+        leg_length = {
+            "R": self.leg_length["R"] if self.leg_length else np.nanmean(m[f"RTROC"][2, :]),
+            "L": self.leg_length["L"] if self.leg_length else np.nanmean(m[f"LTROC"][2, :])
+        }
+        mean_leg_length = np.mean((leg_length["R"], leg_length["L"]))
+        asis_troc_dist = 0.1288 * leg_length[side] - 0.04856
+
+        c = mean_leg_length * 0.115 - 0.0153
+        aa = inter_asis / 2
+        theta = 0.5
+        beta = 0.314
+        x = c * np.cos(theta) * np.sin(beta) - asis_troc_dist * np.cos(beta)
+        y = -(c * np.sin(theta) - aa)
+        z = -c * np.cos(theta) * np.cos(beta) - asis_troc_dist * np.sin(beta)
+        return m[f"{side}ASI"] + np.array((x, y, z, 0))[:, np.newaxis]
+
+    def _knee_axis(self, side) -> Axis:
+        """
+        Define the knee axis
+
+        Parameters
+        ----------
+        side
+            If the markers are from the right ("R") or left ("L") side
+        """
+        if side == "R":
+            return Axis(Axis.Name.Y, start=f"{side}KNE", end=f"{side}KNM")
+        elif side == "L":
+            return Axis(Axis.Name.Y, start=f"{side}KNM", end=f"{side}KNE")
+        else:
+            raise ValueError("side should be 'R' or 'L'")
+
+    def _knee_joint_center(self, m, kc: KinematicChain, side) -> np.ndarray:
+        """
+        Compute the knee joint center. This is a simplified version since the KNM exists
+
+        Parameters
+        ----------
+        m
+            The dictionary of marker positions
+        kc
+            The kinematic chain as stands at that particular time
+        side
+            If the markers are from the right ("R") or left ("L") side
+        """
+        return (m[f"{side}KNM"] + m[f"{side}KNE"]) / 2
+
+    def _ankle_joint_center(self, m, kc: KinematicChain, side) -> np.ndarray:
+        """
+        Compute the ankle joint center. This is a simplified version sie ANKM exists
+
+        Parameters
+        ----------
+        m
+            The dictionary of marker positions
+        kc
+            The kinematic chain as stands at that particular time
+        side
+            If the markers are from the right ("R") or left ("L") side
+        """
+        return (m[f"{side}ANK"] + m[f"{side}ANKM"]) / 2
+        # ankle_offset = (
+        #    self.ankle_width if self.ankle_width else np.nanmean(
+        #        np.linalg.norm(m[f"{side}ANK"][:3, :] - m[f"{side}HEE"][:3, :], axis=0)
+        #    )) / 2
+        # ankle_marker = m[f"{side}ANK"]
+        # knee_joint_center = kc[f"{side}Femur"].segment_coordinate_system.scs[:, 3, :]
+        # plane_marker = m[f"{side}TIB"]
+        #
+        # ankle_offset = np.repeat(ankle_offset, ankle_marker.shape[1])
+        # return chord_function(ankle_offset, knee_joint_center, ankle_marker, plane_marker, direction=-1)
 
     @property
     def dof_index(self) -> dict[str, int]:
