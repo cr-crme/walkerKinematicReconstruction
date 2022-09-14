@@ -30,17 +30,20 @@ def chord_function(offset, known_center_of_rotation, center_of_rotation_marker, 
 
     # project the computed point in the global reference frame
     vect = np.concatenate((x[np.newaxis, :], y[np.newaxis, :], np.zeros((1, n_frames)), np.ones((1, n_frames))))
-    return np.einsum("ijk,jk->ik", rt, vect)
+
+    def rt_times_vect(m1, m2):
+        return np.einsum("ijk,jk->ik", m1, m2)
+    return rt_times_vect(rt, vect)
 
 
-def center_of_mass(coef: float, start: np.ndarray, end: np.ndarray) -> np.ndarray:
+def point_on_vector(coef: float, start: np.ndarray, end: np.ndarray) -> np.ndarray:
     """
-    Computes the 3d position of the center of mass using this equation: start + coef * (end - start)
+    Computes the 3d position of a point using this equation: start + coef * (end - start)
 
     Parameters
     ----------
     coef
-        The coefficient of the length of the segment to use. It is given from the starting porint
+        The coefficient of the length of the segment to use. It is given from the starting point
     start
         The starting point of the segment
     end
@@ -48,7 +51,7 @@ def center_of_mass(coef: float, start: np.ndarray, end: np.ndarray) -> np.ndarra
 
     Returns
     -------
-    The 3d position of the center of mass
+    The 3d position of the point
     """
 
     return start + coef * (end - start)
@@ -77,7 +80,7 @@ def gyration_to_inertia(
     The xx, yy, zz values of the matrix of inertia
     """
     length = np.nanmean(np.linalg.norm(end[:3, :] - start[:3, :], axis=0))
-    r_2 = np.array(coef) * length**2
+    r_2 = (np.array(coef) * length)**2
     return mass * r_2
 
 
@@ -161,10 +164,9 @@ class SimplePluginGait(BiomechanicalModel):
         self._define_kinematic_model()
 
     def _define_kinematic_model(self):
-        # Pelvis: verified, The radii of gyration were computed
-        # using InterHip normalisation (which I have no clue if it is correct)
+        # Pelvis: verified, The radii of gyration were computed using InterHip normalisation (which I have no clue if it is correct)
         # Thorax: verified
-        # Head: verified
+        # Head: verified (move to cor)
         # Humerus: verified
         # Radius: verified
         # Hand: Unsure if I did the correct thing... Moved the hand joint center to WJC
@@ -249,7 +251,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.081 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.52,
                     start=(m["LFHD"] + m["RFHD"]) / 2,
                     end=(m["LBHD"] + m["RBHD"]) / 2,
@@ -287,7 +289,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.028 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.564, start=self._humerus_joint_center(m, kc, "R"), end=self._elbow_joint_center(m, kc, "R")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -322,7 +324,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.016 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.57, start=self._elbow_joint_center(m, kc, "R"), end=self._wrist_joint_center(m, kc, "R")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -352,8 +354,10 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.006 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
-                    0.6205, start=self._wrist_joint_center(m, kc, "R"), end=m[f"RFIN"]
+                center_of_mass=lambda m, kc: point_on_vector(
+                    0.6205,
+                    start=self._wrist_joint_center(m, kc, "R"),
+                    end=point_on_vector(1 / 0.75, start=self._wrist_joint_center(m, kc, "R"), end=m[f"RFIN"])
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
                     mass=0.006 * self.body_mass,
@@ -385,7 +389,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.028 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.564, start=self._humerus_joint_center(m, kc, "L"), end=self._elbow_joint_center(m, kc, "L")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -398,6 +402,7 @@ class SimplePluginGait(BiomechanicalModel):
         )
         self.add_marker("LHumerus", "LSHO", is_technical=True, is_anatomical=True)
         self.add_marker("LHumerus", "LELB", is_technical=True, is_anatomical=True)
+        # TODO: Add ELBM to define the axis
         self.add_marker("LHumerus", "LHUM", is_technical=True, is_anatomical=False)
 
         self.add_segment(
@@ -420,7 +425,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.016 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.57, start=self._elbow_joint_center(m, kc, "L"), end=self._wrist_joint_center(m, kc, "L")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -450,7 +455,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.006 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.6205, start=self._wrist_joint_center(m, kc, "L"), end=m[f"LFIN"]
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -479,7 +484,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.1 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.567, start=self._hip_joint_center(m, kc, "R"), end=self._knee_joint_center(m, kc, "R")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -512,7 +517,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0465 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.567, start=self._knee_joint_center(m, kc, "R"), end=self._ankle_joint_center(m, kc, "R")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -541,7 +546,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0145 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.5, start=self._ankle_joint_center(m, kc, "R"), end=m[f"RTOE"]
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -572,7 +577,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.1 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.567, start=self._hip_joint_center(m, kc, "L"), end=self._knee_joint_center(m, kc, "L")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -605,7 +610,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0465 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.567, start=self._knee_joint_center(m, kc, "L"), end=self._ankle_joint_center(m, kc, "L")
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -634,7 +639,7 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0145 * self.body_mass,
-                center_of_mass=lambda m, kc: center_of_mass(
+                center_of_mass=lambda m, kc: point_on_vector(
                     0.5, start=self._ankle_joint_center(m, kc, "L"), end=m[f"LTOE"]
                 ),
                 inertia=lambda m, kc: gyration_to_inertia(
@@ -672,6 +677,7 @@ class SimplePluginGait(BiomechanicalModel):
         """
         right_hip = self._hip_joint_center(m, kc, "R")
         left_hip = self._hip_joint_center(m, kc, "L")
+        # TODO: verify this
         p = np.nanmean((left_hip, right_hip), axis=0) + np.array((0.0, 0.0, 0.925, 0))[:, np.newaxis] * np.repeat(
             np.linalg.norm(left_hip - right_hip, axis=0)[np.newaxis, :], 4, axis=0
         )
@@ -692,7 +698,7 @@ class SimplePluginGait(BiomechanicalModel):
         kc
             The KinematicChain as it is constructed so far
         """
-        com = center_of_mass(0.63, start=m["C7"], end=self._lumbar_5(m, kc))
+        com = point_on_vector(0.63, start=m["C7"], end=self._lumbar_5(m, kc))
         com[0, :] = self._thorax_joint_center(m, kc)[0, :]  # Make sur the center of mass is symmetric
         return com
 
@@ -889,20 +895,12 @@ class SimplePluginGait(BiomechanicalModel):
         side
             If the markers are from the right ("R") or left ("L") side
         """
-        # ankle_offset = (
-        #    self.ankle_width if self.ankle_width else np.nanmean(
-        #        np.linalg.norm(m[f"{side}ANK"][:3, :] - m[f"{side}HEE"][:3, :], axis=0)
-        #    )) / 2
-        # ankle_marker = m[f"{side}ANK"]
-        # knee_joint_center = kc[f"{side}Femur"].segment_coordinate_system.scs[:, 3, :]
-        # plane_marker = m[f"{side}TIB"]
-        #
-        # ankle_offset = np.repeat(ankle_offset, ankle_marker.shape[1])
-        # return chord_function(ankle_offset, knee_joint_center, ankle_marker, plane_marker, direction=-1)
+
         return (m[f"{side}ANK"] + m[f"{side}ANKM"]) / 2
 
     @property
-    def dof_index(self) -> dict[str, int]:
+    def dof_index(self) -> dict[str, tuple[int, ...]]:
+        # TODO: put flexion / abduction / axial rotation
         return {
             "LHip": 36,  # Left hip flexion
             "LKnee": 39,  # Left knee flexion
