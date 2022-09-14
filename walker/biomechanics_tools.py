@@ -20,11 +20,13 @@ class BiomechanicsTools:
         self.model = None
 
         self.is_kinematic_reconstructed: bool = False
+        self.is_inverse_dynamic_performed: bool = False
         self.c3d: ezc3d.c3d | None = None
         self.t: np.ndarray = np.ndarray(())
         self.q: np.ndarray = np.ndarray(())
         self.qdot: np.ndarray = np.ndarray(())
         self.qddot: np.ndarray = np.ndarray(())
+        self.tau: np.ndarray = np.ndarray(())
 
     @property
     def is_model_loaded(self):
@@ -71,17 +73,35 @@ class BiomechanicsTools:
 
         return self.q
 
+    def inverse_dynamics(self) -> np.ndarray:
+        """
+        Performs the inverse dynamics of a previously reconstructed kinematics
+
+        Returns
+        -------
+        Stores and return de generalized forces
+        """
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before performing the inverse dynamics")
+
+        self.tau = np.array(
+            [self.model.InverseDynamics(q, qdot, qddot).to_array() for q, qdot, qddot in zip(self.q.T, self.qdot.T, self.qddot.T)]
+        ).T
+
+        self.is_inverse_dynamic_performed = True
+        return self.tau
+
     def find_feet_events(self) -> tuple[int, tuple[str, ...], tuple[str, ...], np.ndarray]:
         """
         Returns
         -------
-        number of events int
+        number of events: int
             The number of events
-        event_contexts tuple[str, ...]
+        event_contexts: tuple[str, ...]
             If a specific event arrived the on 'Left' or on the 'Right'
-        event_labels tuple[str, ...]
+        event_labels: tuple[str, ...]
             If a specific event is a 'Foot Strike' or a Foot Off'
-        event_times np.ndarray
+        event_times: np.ndarray
             The time for a specific event. the first row should be all zeros for some unknown reason
         """
 

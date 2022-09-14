@@ -334,7 +334,7 @@ class SimplePluginGait(BiomechanicalModel):
                 origin=lambda m, kc: self._wrist_joint_center(m, kc, "R"),
                 first_axis=Axis(
                     Axis.Name.Z,
-                    start=lambda m, kc: self._hand_origin(m, kc, "R"),
+                    start=lambda m, kc: self._hand_center(m, kc, "R"),
                     end=lambda m, kc: self._wrist_joint_center(m, kc, "R")
                 ),
                 second_axis=Axis(Axis.Name.Y, start="RWRB", end="RWRA"),
@@ -432,7 +432,7 @@ class SimplePluginGait(BiomechanicalModel):
                 origin=lambda m, kc: self._wrist_joint_center(m, kc, "L"),
                 first_axis=Axis(
                     Axis.Name.Z,
-                    start=lambda m, kc: self._hand_origin(m, kc, "L"),
+                    start=lambda m, kc: self._hand_center(m, kc, "L"),
                     end=lambda m, kc: self._wrist_joint_center(m, kc, "L")
                 ),
                 second_axis=Axis(Axis.Name.Y, start="LWRB", end="LWRA"),
@@ -759,16 +759,18 @@ class SimplePluginGait(BiomechanicalModel):
         -------
         The SCS of the wrist
         """
+
         elbow_center = self._elbow_joint_center(m, kc, side)
         wrist_bar_center = project_point_on_line(m[f"{side}WRA"], m[f"{side}WRB"], elbow_center)
-
-        offset_axis = np.cross(m[f"{side}WRA"][:3, :] - m[f"{side}WRB"][:3, :], elbow_center[:3, :] - wrist_bar_center, axis=0)
+        offset_axis = np.cross(
+            m[f"{side}WRA"][:3, :] - m[f"{side}WRB"][:3, :], elbow_center[:3, :] - wrist_bar_center, axis=0
+        )
         offset_axis /= np.linalg.norm(offset_axis, axis=0)
 
         offset = (offset_axis * (self.wrist_width / 2)) if self.wrist_width is not None else 0.02 / 2
         return np.concatenate((wrist_bar_center + offset, np.ones((1, wrist_bar_center.shape[1]))))
 
-    def _hand_origin(self, m, kc: KinematicChain, side: str) -> np.ndarray:
+    def _hand_center(self, m, kc: KinematicChain, side: str) -> np.ndarray:
         """
         Compute the origin of the hand. If hand_thickness if not provided, it is assumed to be 1cm
 
@@ -790,18 +792,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         return chord_function(hand_offset, wrist_joint_center, fin_marker, wrist_bar_center)
 
-    def _hand_center_of_mass(self, m: dict, kc: KinematicChain, side: str):
-        wrist_cor = self._wrist_joint_center(m, kc, side)
-        fingers = m[f"{side}FIN"]
-        return wrist_cor + 0.6205 * (fingers - wrist_cor)
-
-    def _hand_radii_of_gyration(self, m: dict, kc: KinematicChain, side: str):
-        wrist_cor = self._wrist_joint_center(m, kc, side)
-        fingers = m[f"{side}FIN"]
-        gyration = 0.223 * np.nanmean(np.linalg.norm(wrist_cor[:3, :] - fingers[:3, :], axis=0))
-        return np.array((gyration, gyration, 0))
-
-    def _leg_length(self, m, kc: KinematicChain):
+    def _legs_length(self, m, kc: KinematicChain):
         return {
             "R": self.leg_length["R"] if self.leg_length else np.nanmean(m[f"RTROC"][2, :]),
             "L": self.leg_length["L"] if self.leg_length else np.nanmean(m[f"LTROC"][2, :])
@@ -823,11 +814,11 @@ class SimplePluginGait(BiomechanicalModel):
         """
 
         inter_asis = np.nanmean(np.linalg.norm(m["LASI"][:3, :] - m["RASI"][:3, :], axis=0))
-        leg_length = self._leg_length(m, kc)
-        mean_leg_length = np.nanmean((leg_length["R"], leg_length["L"]))
-        asis_troc_dist = 0.1288 * leg_length[side] - 0.04856
+        legs_length = self._legs_length(m, kc)
+        mean_legs_length = np.nanmean((legs_length["R"], legs_length["L"]))
+        asis_troc_dist = 0.1288 * legs_length[side] - 0.04856
 
-        c = mean_leg_length * 0.115 - 0.0153
+        c = mean_legs_length * 0.115 - 0.0153
         aa = inter_asis / 2
         theta = 0.5
         beta = 0.314
@@ -880,7 +871,6 @@ class SimplePluginGait(BiomechanicalModel):
         side
             If the markers are from the right ("R") or left ("L") side
         """
-        return (m[f"{side}ANK"] + m[f"{side}ANKM"]) / 2
         # ankle_offset = (
         #    self.ankle_width if self.ankle_width else np.nanmean(
         #        np.linalg.norm(m[f"{side}ANK"][:3, :] - m[f"{side}HEE"][:3, :], axis=0)
@@ -891,6 +881,7 @@ class SimplePluginGait(BiomechanicalModel):
         #
         # ankle_offset = np.repeat(ankle_offset, ankle_marker.shape[1])
         # return chord_function(ankle_offset, knee_joint_center, ankle_marker, plane_marker, direction=-1)
+        return (m[f"{side}ANK"] + m[f"{side}ANKM"]) / 2
 
     @property
     def dof_index(self) -> dict[str, int]:
