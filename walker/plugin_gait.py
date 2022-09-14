@@ -1,4 +1,6 @@
-from biorbd.model_creation import Axis, BiomechanicalModel, SegmentCoordinateSystem, KinematicChain, InertiaParameters
+from biorbd.model_creation import (
+    Axis, BiomechanicalModel, SegmentCoordinateSystem, KinematicChain, InertiaParameters, Mesh
+)
 import numpy as np
 
 
@@ -184,6 +186,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Y, start="RASI", end="LASI"),
                 axis_to_keep=Axis.Name.Y,
             ),
+            mesh=Mesh(("LPSI", "RPSI", "RASI", "LASI", "LPSI")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.142 * self.body_mass,
                 center_of_mass=self._pelvis_center_of_mass,
@@ -219,6 +222,7 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh(("T10", "C7", "CLAV", "STRN", "T10")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.355 * self.body_mass,
                 center_of_mass=self._thorax_center_of_mass,
@@ -249,6 +253,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Y, start="RFHD", end="LFHD"),
                 axis_to_keep=Axis.Name.X,
             ),
+            mesh=Mesh(("LBHD", "RBHD", "RFHD", "LFHD", "LBHD")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.081 * self.body_mass,
                 center_of_mass=self._head_center_of_mass,
@@ -282,6 +287,12 @@ class SimplePluginGait(BiomechanicalModel):
                     end=lambda m, kc: self._wrist_joint_center(m, kc, "R"),
                 ),
                 axis_to_keep=Axis.Name.Z,
+            ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._humerus_joint_center(m, kc, "R"),
+                    lambda m, kc: self._elbow_joint_center(m, kc, "R"),
+                )
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.028 * self.body_mass,
@@ -318,6 +329,12 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._elbow_joint_center(m, kc, "R"),
+                    lambda m, kc: self._wrist_joint_center(m, kc, "R"),
+                )
+            ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.016 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -348,6 +365,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Y, start="RWRB", end="RWRA"),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh((lambda m, kc: self._wrist_joint_center(m, kc, "R"), "RFIN")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.006 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -382,6 +400,12 @@ class SimplePluginGait(BiomechanicalModel):
                     end=lambda m, kc: self._wrist_joint_center(m, kc, "L"),
                 ),
                 axis_to_keep=Axis.Name.Z,
+            ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._humerus_joint_center(m, kc, "L"),
+                    lambda m, kc: self._elbow_joint_center(m, kc, "L"),
+                )
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.028 * self.body_mass,
@@ -419,6 +443,12 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._elbow_joint_center(m, kc, "L"),
+                    lambda m, kc: self._wrist_joint_center(m, kc, "L"),
+                )
+            ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.016 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -449,6 +479,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Y, start="LWRB", end="LWRA"),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh((lambda m, kc: self._wrist_joint_center(m, kc, "L"), "LFIN")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.006 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -477,6 +508,12 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 second_axis=self._knee_axis("R"),
                 axis_to_keep=Axis.Name.Z,
+            ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._hip_joint_center(m, kc, "R"),
+                    lambda m, kc: self._knee_joint_center(m, kc, "R"),
+                )
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.1 * self.body_mass,
@@ -511,6 +548,12 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=self._knee_axis("R"),
                 axis_to_keep=Axis.Name.Y,
             ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._knee_joint_center(m, kc, "R"),
+                    lambda m, kc: self._ankle_joint_center(m, kc, "R"),
+                )
+            ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0465 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -540,6 +583,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Z, start="RHEE", end="RTOE"),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh(("RTOE", "R5MH", "RHEE", "RTOE")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0145 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -570,6 +614,12 @@ class SimplePluginGait(BiomechanicalModel):
                 ),
                 second_axis=self._knee_axis("L"),
                 axis_to_keep=Axis.Name.Z,
+            ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._hip_joint_center(m, kc, "L"),
+                    lambda m, kc: self._knee_joint_center(m, kc, "L"),
+                )
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.1 * self.body_mass,
@@ -604,6 +654,12 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=self._knee_axis("L"),
                 axis_to_keep=Axis.Name.Y,
             ),
+            mesh=Mesh(
+                (
+                    lambda m, kc: self._knee_joint_center(m, kc, "L"),
+                    lambda m, kc: self._ankle_joint_center(m, kc, "L"),
+                )
+            ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0465 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(
@@ -633,6 +689,7 @@ class SimplePluginGait(BiomechanicalModel):
                 second_axis=Axis(Axis.Name.Z, start="LHEE", end="LTOE"),
                 axis_to_keep=Axis.Name.Z,
             ),
+            mesh=Mesh(("LTOE", "L5MH", "LHEE", "LTOE")),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.0145 * self.body_mass,
                 center_of_mass=lambda m, kc: point_on_vector(

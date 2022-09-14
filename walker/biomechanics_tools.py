@@ -238,11 +238,12 @@ class BiomechanicsTools:
             data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
 
         # Dispatch the kinematics and kinematics
-        # Todo: put data of Power, Force and Moment
         for dof, idx in self.generic_model.dof_index.items():
             if idx is None:
                 continue
             data[:3, point_names.index(f"{dof}Angles"), :] = self.q[idx, :] * 180 / np.pi
+            data[:3, point_names.index(f"{dof}Moment"), :] = self.tau[idx, :]
+            data[:3, point_names.index(f"{dof}Power"), :] = self.tau[idx, :] * self.qdot[idx, :]
         c3d["data"]["points"] = data
 
         # Find and add events
