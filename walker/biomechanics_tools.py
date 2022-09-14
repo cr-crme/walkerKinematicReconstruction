@@ -242,7 +242,7 @@ class BiomechanicsTools:
         for dof, idx in self.generic_model.dof_index.items():
             if idx is None:
                 continue
-            data[:, point_names.index(f"{dof}Angles"), :] = self.q[idx, :]
+            data[:3, point_names.index(f"{dof}Angles"), :] = self.q[idx, :] * 180 / np.pi
         c3d["data"]["points"] = data
 
         # Find and add events

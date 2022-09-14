@@ -164,14 +164,14 @@ class SimplePluginGait(BiomechanicalModel):
         self._define_kinematic_model()
 
     def _define_kinematic_model(self):
-        # Pelvis: verified, The radii of gyration were computed using InterHip normalisation (which I have no clue if it is correct)
+        # Pelvis: verified, The radii of gyration were computed using InterHip normalisation
         # Thorax: verified
-        # Head: verified (move to cor)
+        # Head: verified
         # Humerus: verified
         # Radius: verified
-        # Hand: Unsure if I did the correct thing... Moved the hand joint center to WJC
+        # Hand: Moved the hand joint center to WJC
         # Femur: verified
-        # Knee: I did not understand what is done for KJC, I used mid-point of 'KNM' and 'KNE'
+        # Knee: Used mid-point of 'KNM' and 'KNE' as KJC
         # Ankle: As for knee, we have access to a much easier medial marker (ANKM), so it was used instead
 
         self.add_segment(
@@ -190,8 +190,8 @@ class SimplePluginGait(BiomechanicalModel):
                 inertia=lambda m, kc: gyration_to_inertia(
                     mass=0.142 * self.body_mass,
                     coef=(0.31, 0.31, 0.31),
-                    start=self._hip_joint_center(m, kc, "R"),
-                    end=self._hip_joint_center(m, kc, "L"),
+                    start=self._pelvis_joint_center(m, kc),
+                    end=self._pelvis_center_of_mass(m, kc),
                 ),
             ),
         )
@@ -251,15 +251,11 @@ class SimplePluginGait(BiomechanicalModel):
             ),
             inertia_parameters=InertiaParameters(
                 relative_mass=lambda m, kc: 0.081 * self.body_mass,
-                center_of_mass=lambda m, kc: point_on_vector(
-                    0.52,
-                    start=(m["LFHD"] + m["RFHD"]) / 2,
-                    end=(m["LBHD"] + m["RBHD"]) / 2,
-                ),
+                center_of_mass=self._head_center_of_mass,
                 inertia=lambda m, kc: gyration_to_inertia(
                     mass=0.081 * self.body_mass,
                     coef=(0.495, 0.495, 0.495),
-                    start=self._head_joint_center(m, kc),
+                    start=self._head_center_of_mass(m, kc),
                     end=m["C7"][:3, :],
                 ),
             ),
@@ -677,11 +673,8 @@ class SimplePluginGait(BiomechanicalModel):
         """
         right_hip = self._hip_joint_center(m, kc, "R")
         left_hip = self._hip_joint_center(m, kc, "L")
-        # TODO: verify this
-        p = np.nanmean((left_hip, right_hip), axis=0) + np.array((0.0, 0.0, 0.925, 0))[:, np.newaxis] * np.repeat(
-            np.linalg.norm(left_hip - right_hip, axis=0)[np.newaxis, :], 4, axis=0
-        )
-        p[0, :] = self._pelvis_joint_center(m, kc)[0, :]  # Make sur the center of mass is symmetric
+        p = self._pelvis_joint_center(m, kc)  # Make sur the center of mass is symmetric
+        p[2, :] += 0.925 * (self._lumbar_5(m, kc) - np.nanmean((left_hip, right_hip), axis=0))[2, :]
         return p
 
     def _thorax_joint_center(self, m: dict, kc: KinematicChain):
@@ -704,6 +697,13 @@ class SimplePluginGait(BiomechanicalModel):
 
     def _head_joint_center(self, m: dict, kc: KinematicChain):
         return (m["LFHD"] + m["RFHD"]) / 2
+
+    def _head_center_of_mass(self, m: dict, kc: KinematicChain):
+        return point_on_vector(
+            0.52,
+            start=(m["LFHD"] + m["RFHD"]) / 2,
+            end=(m["LBHD"] + m["RBHD"]) / 2,
+        )
 
     def _humerus_joint_center(self, m: dict, kc: KinematicChain, side: str) -> np.ndarray:
         """
@@ -900,30 +900,34 @@ class SimplePluginGait(BiomechanicalModel):
 
     @property
     def dof_index(self) -> dict[str, tuple[int, ...]]:
-        # TODO: put flexion / abduction / axial rotation
+        """
+        Returns a dictionary with all the dof to export to the C3D and their corresponding XYZ values in the generalized
+        coordinate vector
+        """
+
         return {
-            "LHip": 36,  # Left hip flexion
-            "LKnee": 39,  # Left knee flexion
-            "LAnkle": 42,  # Left ankle flexion
-            "LAbsAnkle": 42,  # Left ankle flexion
-            "RHip": 27,  # Right hip flexion
-            "RKnee": 30,  # Right knee flexion
-            "RAnkle": 33,  # Right ankle flexion
-            "RAbsAnkle": 33,  # Right ankle flexion
-            "LShoulder": 18,  # Left shoulder flexion
-            "LElbow": 21,  # Left elbow flexion
-            "LWrist": 24,  # Left wrist flexion
-            "RShoulder": 9,  # Right shoulder flexion
-            "RElbow": 12,  # Right elbow flexion
-            "RWrist": 15,  # Right wrist flexion
+            "LHip": (36, 37, 38),
+            "LKnee": (39, 40, 41),
+            "LAnkle": (42, 43, 44),
+            "LAbsAnkle": (42, 43, 44),
+            "RHip": (27, 28, 29),
+            "RKnee": (30, 31, 32),
+            "RAnkle": (33, 34, 35),
+            "RAbsAnkle": (33, 34, 35),
+            "LShoulder": (18, 19, 20),
+            "LElbow": (21, 22, 23),
+            "LWrist": (24, 25, 26),
+            "RShoulder": (9, 10, 11),
+            "RElbow": (12, 13, 14),
+            "RWrist": (15, 16, 17),
             "LNeck": None,
             "RNeck": None,
             "LSpine": None,
             "RSpine": None,
             "LHead": None,
             "RHead": None,
-            "LThorax": 6,  # Trunk flexion
-            "RThorax": 6,  # Trunk flexion
-            "LPelvis": 3,  # Pelvis flexion
-            "RPelvis": 3,  # Pelvis flexion
+            "LThorax": (6, 7, 8),
+            "RThorax": (6, 7, 8),
+            "LPelvis": (3, 4, 5),
+            "RPelvis": (3, 4, 5),
         }
