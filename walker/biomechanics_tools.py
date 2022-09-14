@@ -85,7 +85,10 @@ class BiomechanicsTools:
             raise RuntimeError("The kinematics must be reconstructed before performing the inverse dynamics")
 
         self.tau = np.array(
-            [self.model.InverseDynamics(q, qdot, qddot).to_array() for q, qdot, qddot in zip(self.q.T, self.qdot.T, self.qddot.T)]
+            [
+                self.model.InverseDynamics(q, qdot, qddot).to_array()
+                for q, qdot, qddot in zip(self.q.T, self.qdot.T, self.qddot.T)
+            ]
         ).T
 
         self.is_inverse_dynamic_performed = True
@@ -162,12 +165,12 @@ class BiomechanicsTools:
                     break
 
             if first_toe_off_idx == -1 or last_heel_strike_idx == -1:
-                Warning('No heel strikes that correspond to the toe offs were found')
+                Warning("No heel strikes that correspond to the toe offs were found")
 
             heel_strikes = idx_peaks_heel_strike[:last_heel_strike_idx]
             toe_off = idx_peaks_toe_off[first_toe_off_idx:]
             if len(heel_strikes) != len(toe_off):
-                Warning('The number of heel strikes and toe off does not match')
+                Warning("The number of heel strikes and toe off does not match")
 
             return heel_strikes, toe_off
 
@@ -180,11 +183,19 @@ class BiomechanicsTools:
         events_contexts = ("Left",) * len(left_foot_events[0]) * 2 + ("Right",) * len(right_foot_events[0]) * 2
         events_labels = ("Foot Strike", "Foot Off") * int(events_number / 2)
         events_times = np.array(
-            ((0.,) * events_number,
-            self.t[np.array(tuple(itertools.chain(  # flatten the left/right, heel strike/toe off
-                *[[heel, toe] for heel, toe in zip(*left_foot_events)] +
-                [[heel, toe] for heel, toe in zip(*right_foot_events)]
-            )))])
+            (
+                (0.0,) * events_number,
+                self.t[
+                    np.array(
+                        tuple(
+                            itertools.chain(  # flatten the left/right, heel strike/toe off
+                                *[[heel, toe] for heel, toe in zip(*left_foot_events)]
+                                + [[heel, toe] for heel, toe in zip(*right_foot_events)]
+                            )
+                        )
+                    )
+                ],
+            )
         )
         return events_number, events_contexts, events_labels, events_times
 
@@ -199,8 +210,9 @@ class BiomechanicsTools:
         """
 
         if not self.is_kinematic_reconstructed:
-            raise RuntimeError("Kinematics should be reconstructed before writing to c3d. "
-                               "Please call 'kinematic_reconstruction'")
+            raise RuntimeError(
+                "Kinematics should be reconstructed before writing to c3d. " "Please call 'kinematic_reconstruction'"
+            )
 
         c3d = ezc3d.c3d()
 
