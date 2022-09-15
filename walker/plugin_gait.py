@@ -145,13 +145,13 @@ class SimplePluginGait(BiomechanicalModel):
         hand_thickness
             The measured thickness of the hand. If None is provided, 1cm is used
         leg_length
-            The measured leg length in a dict["R"] or dict["L"]. If None is provided, the height of the TROC is
+            The measured leg length in a dict["R"] or dict["L"]. If None is provided, the 95% of the ASI height is
             used (therefore assuming the subject is standing upright during the static trial)
         ankle_width
             The measured ankle width. If None is provided, the distance between ANK and HEE is used.
 
         Since more markers are used in our version (namely Knee medial and ankle medial), the KJC and AJC were
-        simplified to be the mean of these marker with their respective lateral markers. Hence, 'ankle_width'
+        simplified to be the mean of these markers with their respective lateral markers. Hence, 'ankle_width'
         is no more useful
         """
         super(SimplePluginGait, self).__init__()
@@ -874,9 +874,10 @@ class SimplePluginGait(BiomechanicalModel):
         return chord_function(hand_offset, wrist_joint_center, fin_marker, wrist_bar_center)
 
     def _legs_length(self, m, kc: KinematicChain):
+        # TODO: Verify 95% makes sense
         return {
-            "R": self.leg_length["R"] if self.leg_length else np.nanmean(m[f"RTROC"][2, :]),
-            "L": self.leg_length["L"] if self.leg_length else np.nanmean(m[f"LTROC"][2, :]),
+            "R": self.leg_length["R"] if self.leg_length else np.nanmean(m[f"RASI"][2, :]) * 0.95,
+            "L": self.leg_length["L"] if self.leg_length else np.nanmean(m[f"LASI"][2, :]) * 0.95,
         }
 
     def _hip_joint_center(self, m, kc: KinematicChain, side: str) -> np.ndarray:
