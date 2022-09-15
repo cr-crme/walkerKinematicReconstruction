@@ -27,13 +27,18 @@ class BiomechanicsTools:
         self.qdot: np.ndarray = np.ndarray(())
         self.qddot: np.ndarray = np.ndarray(())
         self.tau: np.ndarray = np.ndarray(())
+        self.center_of_mass = np.ndarray(())
 
     @property
     def is_model_loaded(self):
         return self.model is not None
 
-    def _generate_center_of_mass(self):
-        pass
+    def _compute_center_of_mass(self) -> np.ndarray:
+        if not self.is_model_loaded:
+            raise RuntimeError("The biorbd model must be loaded. You can do so by calling generate_personalized_model")
+
+        self.com = np.array([self.model.CoM(q).to_array() for q in self.q.T]).T
+        return self.com
 
     def personalize_model(self, static_trial: str, model_path: str):
         """
@@ -220,6 +225,7 @@ class BiomechanicsTools:
         c3d["parameters"]["POINT"]["RATE"]["value"] = [int(self.c3d["parameters"]["POINT"]["RATE"]["value"][0])]
         c3d.add_parameter("POINT", "ANGLE_UNITS", ["deg"])
         point_names = [name.to_string() for name in self.model.markerNames()]
+        point_names.extend(["CentreOfMass", "CentreOfMassFloor"])
         point_names.extend(suffix_to_all(tuple(self.generic_model.dof_index.keys()), "Angles"))
         point_names.extend(suffix_to_all(tuple(self.generic_model.dof_index.keys()), "Power"))
         point_names.extend(suffix_to_all(tuple(self.generic_model.dof_index.keys()), "Force"))
@@ -236,6 +242,11 @@ class BiomechanicsTools:
                 continue
             # Make sure it is in the right order
             data[:, point_names.index(name_in_c3d), :] = self.c3d["data"]["points"][:, i, :]
+
+        self._compute_center_of_mass()
+        data[:3, point_names.index("CentreOfMass"), :] = self.com
+        data[:3, point_names.index("CentreOfMassFloor"), :] = self.com
+        data[2, point_names.index("CentreOfMassFloor"), :] = 0
 
         # Dispatch the kinematics and kinematics
         for dof, idx in self.generic_model.dof_index.items():
