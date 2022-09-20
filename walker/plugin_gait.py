@@ -1,5 +1,12 @@
 from biorbd.model_creation import (
-    Axis, BiomechanicalModel, BiomechanicalModelReal, SegmentCoordinateSystem, InertiaParameters, Mesh, Segment, Marker
+    Axis,
+    BiomechanicalModel,
+    BiomechanicalModelReal,
+    SegmentCoordinateSystem,
+    InertiaParameters,
+    Mesh,
+    Segment,
+    Marker,
 )
 import numpy as np
 
@@ -35,6 +42,7 @@ def chord_function(offset, known_center_of_rotation, center_of_rotation_marker, 
 
     def rt_times_vect(m1, m2):
         return np.einsum("ijk,jk->ik", m1, m2)
+
     return rt_times_vect(rt, vect)
 
 
@@ -338,7 +346,7 @@ class SimplePluginGait(BiomechanicalModel):
                 center_of_mass=lambda m, bio: point_on_vector(
                     0.6205,
                     start=self._wrist_joint_center(m, bio, "R"),
-                    end=point_on_vector(1 / 0.75, start=self._wrist_joint_center(m, bio, "R"), end=m[f"RFIN"])
+                    end=point_on_vector(1 / 0.75, start=self._wrist_joint_center(m, bio, "R"), end=m[f"RFIN"]),
                 ),
                 inertia=lambda m, bio: InertiaParameters.radii_of_gyration_to_inertia(
                     mass=0.006 * self.body_mass,

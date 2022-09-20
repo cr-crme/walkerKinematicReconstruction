@@ -230,7 +230,9 @@ class BiomechanicsTools:
 
     def _dispatch_events_from_bioviz(self):
         self.events = [self.bioviz_window.n_events]
-        self.events += self.bioviz_window.analyses_c3d_editor.convert_event_for_c3d(self.c3d["header"]["points"]["frame_rate"])
+        self.events += self.bioviz_window.analyses_c3d_editor.convert_event_for_c3d(
+            self.c3d["header"]["points"]["frame_rate"]
+        )
 
         self.bioviz_window.vtk_window.close()
 
