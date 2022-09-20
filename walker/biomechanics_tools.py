@@ -1,7 +1,9 @@
 import itertools
+import os.path
 
 import biorbd
 from biorbd.model_creation import C3dData
+import bioviz
 import ezc3d
 import numpy as np
 from scipy import signal
@@ -21,6 +23,7 @@ class BiomechanicsTools:
 
         self.is_kinematic_reconstructed: bool = False
         self.is_inverse_dynamic_performed: bool = False
+        self.c3d_path: str | None = None
         self.c3d: ezc3d.c3d | None = None
         self.t: np.ndarray = np.ndarray(())
         self.q: np.ndarray = np.ndarray(())
@@ -28,6 +31,9 @@ class BiomechanicsTools:
         self.qddot: np.ndarray = np.ndarray(())
         self.tau: np.ndarray = np.ndarray(())
         self.center_of_mass = np.ndarray(())
+
+        self.events = None
+        self.bioviz_window: bioviz.Viz | None = None
 
     @property
     def is_model_loaded(self):
@@ -55,6 +61,23 @@ class BiomechanicsTools:
         self.generic_model.write(save_path=model_path, data=C3dData(static_trial))
         self.model = biorbd.Model(model_path)
 
+    def process_trial(self, trial: str) -> None:
+        """
+        Performs everything to do with a specific trial, including kinematic reconstruction and export
+
+        Parameters
+        ----------
+        trial
+            The path to the c3d file of the trial to reconstruct the kinematics from
+        """
+        self.reconstruct_kinematics(trial)
+        self.inverse_dynamics()
+
+        # Write the c3d as if it was the plug in gate output
+        path = os.path.dirname(trial)
+        file_name = os.path.splitext(os.path.basename(trial))[0]
+        self.to_c3d(f"{path}/{file_name}_processed.c3d")
+
     def reconstruct_kinematics(self, trial: str) -> np.ndarray:
         """
         Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded using a Kalman filter
@@ -72,7 +95,8 @@ class BiomechanicsTools:
         if not self.is_model_loaded:
             raise RuntimeError("The biorbd model must be loaded. You can do so by calling generate_personalized_model")
 
-        self.c3d = ezc3d.c3d(trial, extract_forceplat_data=True)
+        self.c3d_path = trial
+        self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
         self.t, self.q, self.qdot, self.qddot = biorbd.extended_kalman_filter(self.model, trial)
         self.is_kinematic_reconstructed = True
 
@@ -204,6 +228,12 @@ class BiomechanicsTools:
         )
         return events_number, events_contexts, events_labels, events_times
 
+    def _dispatch_events_from_bioviz(self):
+        self.events = [self.bioviz_window.n_events]
+        self.events += self.bioviz_window.analyses_c3d_editor.convert_event_for_c3d(self.c3d["header"]["points"]["frame_rate"])
+
+        self.bioviz_window.vtk_window.close()
+
     def to_c3d(self, save_path: str) -> None:
         """
         Create a Nexus-like c3d file from the reconstructed kinematics
@@ -258,7 +288,22 @@ class BiomechanicsTools:
         c3d["data"]["points"] = data
 
         # Find and add events
-        events_number, events_contexts, events_labels, events_times = self.find_feet_events()
+        self.events = self.find_feet_events()
+        events_number, events_contexts, events_labels, events_times = self.events
+
+        self.bioviz_window = bioviz.Viz(loaded_model=self.model)
+        self.bioviz_window.load_movement(self.q)
+        self.bioviz_window.load_experimental_markers(self.c3d_path)
+        self.bioviz_window.radio_c3d_editor_model.click()
+        self.bioviz_window.clear_events()
+        for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
+            frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+            self.bioviz_window.set_event(frame, f"{context} {label}")
+        self.bioviz_window.analyses_c3d_editor.export_c3d_button.disconnect()
+        self.bioviz_window.analyses_c3d_editor.export_c3d_button.clicked.connect(self._dispatch_events_from_bioviz)
+        self.bioviz_window.exec()
+        events_number, events_contexts, events_labels, events_times = self.events
+
         c3d.add_parameter("EVENT", "USED", (events_number,))
         c3d.add_parameter("EVENT", "CONTEXTS", events_contexts)
         c3d.add_parameter("EVENT", "LABELS", events_labels)
