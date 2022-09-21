@@ -61,7 +61,7 @@ class BiomechanicsTools:
         self.generic_model.write(save_path=model_path, data=C3dData(static_trial))
         self.model = biorbd.Model(model_path)
 
-    def process_trial(self, trial: str) -> None:
+    def process_trial(self, trial: str, compute_automatic_events: bool = False) -> None:
         """
         Performs everything to do with a specific trial, including kinematic reconstruction and export
 
@@ -69,6 +69,8 @@ class BiomechanicsTools:
         ----------
         trial
             The path to the c3d file of the trial to reconstruct the kinematics from
+        compute_automatic_events
+            If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
         self.reconstruct_kinematics(trial)
         self.inverse_dynamics()
@@ -76,7 +78,7 @@ class BiomechanicsTools:
         # Write the c3d as if it was the plug in gate output
         path = os.path.dirname(trial)
         file_name = os.path.splitext(os.path.basename(trial))[0]
-        self.to_c3d(f"{path}/{file_name}_processed.c3d")
+        self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events)
 
     def reconstruct_kinematics(self, trial: str) -> np.ndarray:
         """
@@ -236,7 +238,7 @@ class BiomechanicsTools:
 
         self.bioviz_window.vtk_window.close()
 
-    def to_c3d(self, save_path: str) -> None:
+    def to_c3d(self, save_path: str, compute_automatic_events: bool = False) -> None:
         """
         Create a Nexus-like c3d file from the reconstructed kinematics
 
@@ -244,6 +246,8 @@ class BiomechanicsTools:
         ----------
         save_path
             The path where to save the c3d
+        compute_automatic_events
+            If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
 
         if not self.is_kinematic_reconstructed:
@@ -297,10 +301,11 @@ class BiomechanicsTools:
         self.bioviz_window.load_movement(self.q)
         self.bioviz_window.load_experimental_markers(self.c3d_path)
         self.bioviz_window.radio_c3d_editor_model.click()
-        self.bioviz_window.clear_events()
-        for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
-            frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
-            self.bioviz_window.set_event(frame, f"{context} {label}")
+        if compute_automatic_events:
+            self.bioviz_window.clear_events()
+            for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
+                frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+                self.bioviz_window.set_event(frame, f"{context} {label}")
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.disconnect()
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.clicked.connect(self._dispatch_events_from_bioviz)
         self.bioviz_window.exec()

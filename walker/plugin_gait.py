@@ -929,15 +929,18 @@ class SimplePluginGait(BiomechanicalModel):
         coordinate vector
         """
 
+        # TODO: Some of these values as just copy of their relative
         return {
             "LHip": (36, 37, 38),
             "LKnee": (39, 40, 41),
             "LAnkle": (42, 43, 44),
             "LAbsAnkle": (42, 43, 44),
+            "LFootProgress": (42, 43, 44),
             "RHip": (27, 28, 29),
             "RKnee": (30, 31, 32),
             "RAnkle": (33, 34, 35),
             "RAbsAnkle": (33, 34, 35),
+            "RFootProgress": (33, 34, 35),
             "LShoulder": (18, 19, 20),
             "LElbow": (21, 22, 23),
             "LWrist": (24, 25, 26),

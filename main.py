@@ -11,4 +11,4 @@ tools.personalize_model(static_trial, kinematic_model_file_path)
 
 # Perform some biomechanical computation
 for trial in trials:
-    tools.process_trial(trial)
+    tools.process_trial(trial, compute_automatic_events=False)
