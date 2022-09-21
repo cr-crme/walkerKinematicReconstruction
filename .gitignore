@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+.idea/
+
+data/
+
+temporary.bioMod
+
+*.json
