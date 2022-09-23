@@ -7,6 +7,8 @@ from biorbd.model_creation import (
     Mesh,
     Segment,
     Marker,
+    Translations,
+    Rotations,
 )
 import numpy as np
 
@@ -158,8 +160,8 @@ class SimplePluginGait(BiomechanicalModel):
         # Ankle: As for knee, we have access to a much easier medial marker (ANKM), so it was used instead
 
         self["Pelvis"] = Segment(
-            translations="xyz",
-            rotations="xyz",
+            translations=Translations.XYZ,
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=self._pelvis_joint_center,
                 first_axis=Axis(name=Axis.Name.X, start=lambda m, bio: (m["LPSI"] + m["RPSI"]) / 2, end="RASI"),
@@ -186,7 +188,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["Thorax"] = Segment(
             parent_name="Pelvis",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=self._thorax_joint_center,
                 first_axis=Axis(
@@ -250,7 +252,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RHumerus"] = Segment(
             parent_name="Thorax",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._humerus_joint_center(m, bio, "R"),
                 first_axis=Axis(
@@ -290,7 +292,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RRadius"] = Segment(
             parent_name="RHumerus",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._elbow_joint_center(m, bio, "R"),
                 first_axis=Axis(
@@ -329,7 +331,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RHand"] = Segment(
             parent_name="RRadius",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._wrist_joint_center(m, bio, "R"),
                 first_axis=Axis(
@@ -360,7 +362,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LHumerus"] = Segment(
             parent_name="Thorax",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._humerus_joint_center(m, bio, "L"),
                 first_axis=Axis(
@@ -401,7 +403,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LRadius"] = Segment(
             parent_name="LHumerus",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._elbow_joint_center(m, bio, "L"),
                 first_axis=Axis(
@@ -440,7 +442,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LHand"] = Segment(
             parent_name="LRadius",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._wrist_joint_center(m, bio, "L"),
                 first_axis=Axis(
@@ -469,7 +471,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RFemur"] = Segment(
             parent_name="Pelvis",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._hip_joint_center(m, bio, "R"),
                 first_axis=Axis(
@@ -507,7 +509,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RTibia"] = Segment(
             parent_name="RFemur",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._knee_joint_center(m, bio, "R"),
                 first_axis=Axis(
@@ -545,7 +547,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["RFoot"] = Segment(
             parent_name="RTibia",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._ankle_joint_center(m, bio, "R"),
                 first_axis=self._knee_axis("R"),
@@ -572,7 +574,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LFemur"] = Segment(
             parent_name="Pelvis",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._hip_joint_center(m, bio, "L"),
                 first_axis=Axis(
@@ -610,7 +612,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LTibia"] = Segment(
             parent_name="LFemur",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._knee_joint_center(m, bio, "L"),
                 first_axis=Axis(
@@ -648,7 +650,7 @@ class SimplePluginGait(BiomechanicalModel):
 
         self["LFoot"] = Segment(
             parent_name="LTibia",
-            rotations="xyz",
+            rotations=Rotations.XYZ,
             segment_coordinate_system=SegmentCoordinateSystem(
                 origin=lambda m, bio: self._ankle_joint_center(m, bio, "L"),
                 first_axis=self._knee_axis("L"),
