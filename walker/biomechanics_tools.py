@@ -73,7 +73,7 @@ class BiomechanicsTools:
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
         self.reconstruct_kinematics(trial)
-        self.inverse_dynamics()
+        self.inverse_dynamics()  #TODO ADD force plateform
 
         # Write the c3d as if it was the plug in gate output
         path = os.path.dirname(trial)
@@ -115,6 +115,7 @@ class BiomechanicsTools:
         if not self.is_kinematic_reconstructed:
             raise RuntimeError("The kinematics must be reconstructed before performing the inverse dynamics")
 
+        # TODO Compute if norm(external_force) < threshold, then nan
         self.tau = np.array(
             [
                 self.model.InverseDynamics(q, qdot, qddot).to_array()

@@ -12,3 +12,7 @@ tools.personalize_model(static_trial, kinematic_model_file_path)
 # Perform some biomechanical computation
 for trial in trials:
     tools.process_trial(trial, compute_automatic_events=False)
+
+# TODO: Make marker's color dependent on the distance with their respective virtual marker
+# TODO: Bioviz vizual bug with the end of the trial when resizing the window
+# TODO: Record a tutorial
