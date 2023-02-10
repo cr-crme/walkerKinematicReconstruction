@@ -61,7 +61,7 @@ class BiomechanicsTools:
         self.generic_model.write(save_path=model_path, data=C3dData(static_trial))
         self.model = biorbd.Model(model_path)
 
-    def process_trial(self, trial: str, compute_automatic_events: bool = False) -> None:
+    def process_trial(self, trial: str, compute_automatic_events: bool = False, only_compute_kinematics: bool = False) -> None:
         """
         Performs everything to do with a specific trial, including kinematic reconstruction and export
 
@@ -71,10 +71,14 @@ class BiomechanicsTools:
             The path to the c3d file of the trial to reconstruct the kinematics from
         compute_automatic_events
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
+        only_compute_kinematics
+            If se should only reconstruct kinematics
         """
         self.load_c3d_file(trial)
         frames = self._select_frames_to_reconstruct()
         self.reconstruct_kinematics(frames=frames)
+        if only_compute_kinematics:
+            return
         self.inverse_dynamics()  # TODO ADD force platform
 
         # Write the c3d as if it was the plug in gate output
