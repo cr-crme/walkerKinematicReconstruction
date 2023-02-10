@@ -72,34 +72,74 @@ class BiomechanicsTools:
         compute_automatic_events
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
-        self.reconstruct_kinematics(trial)
-        self.inverse_dynamics()  #TODO ADD force plateform
+        self.load_c3d_file(trial)
+        frames = self._select_frames_to_reconstruct()
+        self.reconstruct_kinematics(frames=frames)
+        self.inverse_dynamics()  # TODO ADD force platform
 
         # Write the c3d as if it was the plug in gate output
         path = os.path.dirname(trial)
         file_name = os.path.splitext(os.path.basename(trial))[0]
-        self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events)
+        self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events=compute_automatic_events)
 
-    def reconstruct_kinematics(self, trial: str) -> np.ndarray:
+    def load_c3d_file(self, trial):
         """
-        Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded using a Kalman filter
+        Load the c3d in the variables
 
         Parameters
         ----------
         trial
             The path to the c3d file of the trial to reconstruct the kinematics from
+        """
+        self.c3d_path = trial
+        self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
+
+    def _select_frames_to_reconstruct(self) -> slice:
+        n_markers = self.c3d["data"]["points"].shape[1]
+        n_frames = self.c3d["data"]["points"].shape[2]
+        n_nan_marker_per_frame = np.sum(np.isnan(np.sum(self.c3d["data"]["points"], axis=0)), axis=0)
+        missing_percentage_per_frame = n_nan_marker_per_frame / n_markers
+
+        acceptance_threshold = 0.5  # maximum % of markers are missing
+        is_frame_accepted = list(missing_percentage_per_frame < acceptance_threshold)
+        first_frame = is_frame_accepted.index(True)
+        is_frame_accepted.reverse()
+        last_frame = n_frames - is_frame_accepted.index(True)
+
+        return slice(first_frame, last_frame)
+
+    def reconstruct_kinematics(self, frames: slice = slice(None)) -> np.ndarray:
+        """
+        Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded using a Kalman filter
+
+        Parameters
+        ----------
+        frames
+            The frames to reconstruct
 
         Returns
         -------
         The matrix nq x ntimes of the reconstructed kinematics
         """
-
         if not self.is_model_loaded:
             raise RuntimeError("The biorbd model must be loaded. You can do so by calling generate_personalized_model")
 
-        self.c3d_path = trial
-        self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
-        self.t, self.q, self.qdot, self.qddot = biorbd.extended_kalman_filter(self.model, trial)
+        first_frame_c3d = self.c3d["header"]["points"]["first_frame"]
+        last_frame_c3d = self.c3d["header"]["points"]["last_frame"]
+        n_frames_before = (frames.start - first_frame_c3d) if frames.start is not None else 0
+        n_frames_after = (last_frame_c3d - frames.stop + 1) if frames.stop is not None else 0
+        n_frames_total = last_frame_c3d - first_frame_c3d + 1
+        self.t, self.q, self.qdot, self.qddot = biorbd.extended_kalman_filter(self.model, self.c3d_path, frames=frames)
+
+        # Align the data with the c3d
+        n_q = self.q.shape[0]
+        dof_padding_before = np.zeros((n_q, n_frames_before))
+        dof_padding_after = np.zeros((n_q, n_frames_after))
+        self.t = np.linspace(first_frame_c3d, last_frame_c3d, n_frames_total)
+        self.q = np.concatenate((dof_padding_before, self.q, dof_padding_after), axis=1)
+        self.qdot = np.concatenate((dof_padding_before, self.qdot, dof_padding_after), axis=1)
+        self.qddot = np.concatenate((dof_padding_before, self.qddot, dof_padding_after), axis=1)
+
         self.is_kinematic_reconstructed = True
 
         return self.q
@@ -271,7 +311,9 @@ class BiomechanicsTools:
 
         # Transfer the marker data to the new c3d
         c3d["parameters"]["POINT"]["LABELS"]["value"] = point_names
-        n_frame = self.c3d["header"]["points"]["last_frame"] - self.c3d["header"]["points"]["first_frame"] + 1
+        first_frame = self.c3d["header"]["points"]["first_frame"]
+        last_frame = self.c3d["header"]["points"]["last_frame"]
+        n_frame = last_frame - first_frame + 1
         data = np.ndarray((4, len(point_names), n_frame)) * np.nan
         data[3, ...] = 1
         for i, name_in_c3d in enumerate(self.c3d["parameters"]["POINT"]["LABELS"]["value"]):
@@ -294,22 +336,24 @@ class BiomechanicsTools:
             data[:3, point_names.index(f"{dof}Power"), :] = self.tau[idx, :] * self.qdot[idx, :]
         c3d["data"]["points"] = data
 
-        # Find and add events
-        self.events = self.find_feet_events()
-        events_number, events_contexts, events_labels, events_times = self.events
-
         self.bioviz_window = bioviz.Viz(loaded_model=self.model)
         self.bioviz_window.load_movement(self.q)
         self.bioviz_window.load_experimental_markers(self.c3d_path)
         self.bioviz_window.radio_c3d_editor_model.click()
+
         if compute_automatic_events:
             self.bioviz_window.clear_events()
+            # Find and add events
+            self.events = self.find_feet_events()
+            events_number, events_contexts, events_labels, events_times = self.events
             for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
                 frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
                 self.bioviz_window.set_event(frame, f"{context} {label}")
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.disconnect()
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.clicked.connect(self._dispatch_events_from_bioviz)
         self.bioviz_window.exec()
+        if self.events is None:
+            raise RuntimeError("No events found, have you clicked Export C3D?")
         events_number, events_contexts, events_labels, events_times = self.events
 
         c3d.add_parameter("EVENT", "USED", (events_number,))
