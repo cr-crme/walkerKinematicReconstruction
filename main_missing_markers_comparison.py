@@ -16,8 +16,11 @@ trials = (
 markers_to_remove = (
     (),
     ("LPSI", "RPSI", "LASI", "RASI"),
+    ("LPSI", "RPSI"),
+    ("LPSI",),
+    ("LASI",),
 )
-colors = ("r", "b")
+colors = ("r", "g", "b", "m", "k")
 dof_to_compare = ("RFemur_RotY", "RTibia_RotY", "RFoot_RotY", "LFemur_RotY", "LTibia_RotY", "LFoot_RotY",)
 # --------------- #
 
@@ -31,13 +34,14 @@ tools.personalize_model(static_trial, kinematic_model_file_path)
 
 # Perform some biomechanical computation
 all_q = []
+temporary_c3d_path = "tp.c3d"
 for trial in trials:
     q_tp = []
     for markers in markers_to_remove:
-        remove_markers(trial, "tp.c3d", markers)
-        tools.process_trial("tp.c3d", compute_automatic_events=False, only_compute_kinematics=True)
+        remove_markers(trial, temporary_c3d_path, markers)
+        tools.process_trial(temporary_c3d_path, compute_automatic_events=False, only_compute_kinematics=True)
         q_tp.append(tools.q)
-        os.remove("tp.c3d")
+        os.remove(temporary_c3d_path)
     all_q.append(q_tp)
 
 # TODO : reconstruct pelvis relative to vertical
