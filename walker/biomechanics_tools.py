@@ -8,7 +8,7 @@ import ezc3d
 import numpy as np
 from scipy import signal
 
-from .misc import differentiate
+from .misc import differentiate, to_rotation_matrix, to_euler
 from .plugin_gait import SimplePluginGait
 
 
@@ -17,8 +17,8 @@ def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tupl
 
 
 class BiomechanicsTools:
-    def __init__(self, body_mass):
-        self.generic_model = SimplePluginGait(body_mass)
+    def __init__(self, body_mass: float, include_upper_body: bool = True):
+        self.generic_model = SimplePluginGait(body_mass, include_upper_body=False)
         self.model = None
 
         self.is_kinematic_reconstructed: bool = False
@@ -61,7 +61,7 @@ class BiomechanicsTools:
         self.generic_model.write(save_path=model_path, data=C3dData(static_trial))
         self.model = biorbd.Model(model_path)
 
-    def process_trial(self, trial: str, compute_automatic_events: bool = False, only_compute_kinematics: bool = False) -> None:
+    def process_trial(self, trial: str, compute_automatic_events: bool = False) -> None:
         """
         Performs everything to do with a specific trial, including kinematic reconstruction and export
 
@@ -71,20 +71,36 @@ class BiomechanicsTools:
             The path to the c3d file of the trial to reconstruct the kinematics from
         compute_automatic_events
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
-        only_compute_kinematics
-            If se should only reconstruct kinematics
         """
-        self.load_c3d_file(trial)
-        frames = self._select_frames_to_reconstruct()
-        self.reconstruct_kinematics(frames=frames)
-        if only_compute_kinematics:
-            return
+        self.process_kinematic_reconstruction(trial)
         self.inverse_dynamics()  # TODO ADD force platform
 
         # Write the c3d as if it was the plug in gate output
         path = os.path.dirname(trial)
         file_name = os.path.splitext(os.path.basename(trial))[0]
         self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events=compute_automatic_events)
+
+    def process_kinematic_reconstruction(self, trial: str, visualize: bool = False):
+        """
+        Performs the kinematics reconstruction
+
+        Parameters
+        ----------
+        trial
+            The path to the c3d file of the trial to reconstruct the kinematics from
+        visualize
+            If the reconstruction should be shown
+
+        Returns
+        -------
+        This method populates self.c3d, self.c3d_path, self.t, self.q, self.qdot and self.qddot
+        """
+        self.load_c3d_file(trial)
+        frames = self._select_frames_to_reconstruct()
+        self.reconstruct_kinematics(frames=frames)
+        self.unwrap_kinematics()
+        if visualize:
+            self.show_kinematic_reconstruction()
 
     def load_c3d_file(self, trial):
         """
@@ -99,12 +115,16 @@ class BiomechanicsTools:
         self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
 
     def _select_frames_to_reconstruct(self) -> slice:
-        n_markers = self.c3d["data"]["points"].shape[1]
+        technical_markers = tuple(name.to_string() for name in self.model.technicalMarkerNames())
+        n_technical_markers = len(technical_markers)
+        c3d_marker_names = self.c3d["parameters"]["POINT"]["LABELS"]["value"]
+        marker_index = tuple(c3d_marker_names.index(n) for n in technical_markers)
         n_frames = self.c3d["data"]["points"].shape[2]
-        n_nan_marker_per_frame = np.sum(np.isnan(np.sum(self.c3d["data"]["points"], axis=0)), axis=0)
-        missing_percentage_per_frame = n_nan_marker_per_frame / n_markers
 
-        acceptance_threshold = 0.5  # maximum % of markers are missing
+        n_nan_marker_per_frame = np.sum(np.isnan(np.sum(self.c3d["data"]["points"][:, marker_index, :], axis=0)), axis=0)
+        missing_percentage_per_frame = n_nan_marker_per_frame / n_technical_markers
+
+        acceptance_threshold = 0.4  # maximum % of markers are missing
         is_frame_accepted = list(missing_percentage_per_frame < acceptance_threshold)
         first_frame = is_frame_accepted.index(True)
         is_frame_accepted.reverse()
@@ -147,6 +167,47 @@ class BiomechanicsTools:
         self.is_kinematic_reconstructed = True
 
         return self.q
+
+    def unwrap_kinematics(self):
+        """
+        Performs unwrap on the kinematics from which it re-expressed in terms of matrix rotation before
+        (which makes it more likely to be in the same quadrant)
+
+        Returns
+        -------
+
+        """
+
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before performing the unwrap")
+
+        segment_names = tuple(s.name().to_string() for s in self.model.segments())
+        dof_names = tuple(n.to_string() for n in self.model.nameDof())
+        for segment_name in segment_names:
+            segment = self.model.segment(segment_names.index(segment_name))
+            angle_sequence = segment.seqR().to_string()
+            if not angle_sequence:
+                continue
+            angle_names = tuple(segment.nameDof(i).to_string() for i in range(segment.nbDofTrans(), segment.nbDofTrans() + segment.nbDofRot()))
+            angle_index = tuple(dof_names.index(f"{segment_name}_{angle_name}") for angle_name in angle_names)
+
+            data = self.q[angle_index, :]
+            rot = to_rotation_matrix(angles=data, angle_sequence=angle_sequence)
+            self.q[angle_index, :] = np.unwrap(to_euler(rot, angle_sequence), axis=1)
+
+    def show_kinematic_reconstruction(self):
+        """
+        Opens a BioViz window and show the kinematic reconstruction
+        """
+
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before showing the reconstruction")
+
+        viz = bioviz.Viz(loaded_model=self.model)
+        viz.load_movement(self.q)
+        viz.load_experimental_markers(self.c3d_path)
+        viz.radio_c3d_editor_model.click()
+        viz.exec()
 
     def inverse_dynamics(self) -> np.ndarray:
         """

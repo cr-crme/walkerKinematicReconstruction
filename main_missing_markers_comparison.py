@@ -17,40 +17,63 @@ markers_to_remove = (
     (),
     ("LPSI", "RPSI", "LASI", "RASI"),
     ("LPSI", "RPSI"),
-    ("LPSI",),
-    ("LASI",),
 )
 colors = ("r", "g", "b", "m", "k")
-dof_to_compare = ("RFemur_RotY", "RTibia_RotY", "RFoot_RotY", "LFemur_RotY", "LTibia_RotY", "LFoot_RotY",)
+dof_to_compare = ("Pelvis_RotY", "RFemur_RotY", "RTibia_RotY", "RFoot_RotY", "LFemur_RotY", "LTibia_RotY", "LFoot_RotY",)
 # --------------- #
 
-# Sanity check
-if len(colors) != len(markers_to_remove):
-    raise ValueError("The number of conditions should match")
 
-# Generate the personalized kinematic model
-tools = BiomechanicsTools(body_mass=100)
-tools.personalize_model(static_trial, kinematic_model_file_path)
+def reconstruct_with_occlusions(tools: BiomechanicsTools, path: str, markers_to_occlude: tuple[str, ...]) -> np.ndarray:
+    """
+    Reconstruct kinematics, but simulate marker occlusions on the requested markers
 
-# Perform some biomechanical computation
-all_q = []
-temporary_c3d_path = "tp.c3d"
-for trial in trials:
-    q_tp = []
-    for markers in markers_to_remove:
-        remove_markers(trial, temporary_c3d_path, markers)
-        tools.process_trial(temporary_c3d_path, compute_automatic_events=False, only_compute_kinematics=True)
-        q_tp.append(tools.q)
-        os.remove(temporary_c3d_path)
-    all_q.append(q_tp)
+    Parameters
+    ----------
+    tools
+        The personalized kinematic model
+    path
+        The path of the C3D file to reconstruct
+    markers_to_occlude
+        The name of the markers to occlude (replace them with a nan in the C3D)
 
-# TODO : reconstruct pelvis relative to vertical
+    Returns
+    -------
+    The kinematics reconstructed is placed in tools.q and returned
+    """
 
-for name in dof_to_compare:
-    dof = tuple(n.to_string() for n in tools.model.nameDof()).index(name)
-    plt.figure()
-    plt.title(f"DoF: {name}")
-    for q in all_q:
-        for condition, color in zip(q, colors):
-            plt.plot(np.unwrap(condition[dof, :]) * 180 / np.pi, color)
-plt.show()
+    temporary_c3d_path = "tp.c3d"
+    remove_markers(path, temporary_c3d_path, markers_to_occlude)
+    tools.process_kinematic_reconstruction(temporary_c3d_path, visualize=False)
+    os.remove(temporary_c3d_path)
+    return tools.q
+
+
+def main():
+    # Sanity check
+    if len(colors) < len(markers_to_remove):
+        raise ValueError("The number of conditions should match")
+
+    # Generate the personalized kinematic model
+    tools = BiomechanicsTools(body_mass=100, include_upper_body=False)
+    tools.personalize_model(static_trial, kinematic_model_file_path)
+
+    # Reconstruct kinematics but simulate marker occlusions
+    q_all_trials = []
+    for trial in trials:
+        q_all_trials.append([reconstruct_with_occlusions(tools, trial, markers) for markers in markers_to_remove])
+
+    # TODO : reconstruct pelvis relative to vertical
+    # Plot the results
+    dof_names = tuple(n.to_string() for n in tools.model.nameDof())
+    for name in dof_to_compare:
+        dof = dof_names.index(name)
+        plt.figure()
+        plt.title(f"DoF: {name}")
+        for q_trials in q_all_trials:
+            for condition, color in zip(q_trials, colors):
+                plt.plot(np.unwrap(condition[dof, :]) * 180 / np.pi, color)
+    plt.show()
+
+
+if __name__ == "__main__":
+    main()
