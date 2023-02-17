@@ -1,10 +1,47 @@
+from dataclasses import dataclass
 import os
+from enum import Enum
 
 import numpy as np
 import scipy
 
 from c3d_modifier import remove_markers
 from walker import BiomechanicsTools
+
+
+class DoF(Enum):
+    TRANS_X = "TransX"
+    TRANS_Y = "TransY"
+    TRANS_Z = "TransZ"
+    ROT_X = "RotX"
+    ROT_Y = "RotY"
+    ROT_Z = "RotZ"
+
+
+class RelativeTo(Enum):
+    PARENT = "parent"
+    VERTICAL = "vertical"
+
+
+class Side(Enum):
+    RIGHT = "Right"
+    LEFT = "Left"
+
+
+@dataclass
+class DoFCondition:
+    name: str
+    segment: str
+    dof: DoF
+    side: Side.RIGHT
+    relative_to: RelativeTo = RelativeTo.PARENT
+
+
+@dataclass
+class MarkerOcclusionCondition:
+    name: str
+    remove_indices: tuple
+    color: str
 
 
 def reconstruct_with_occlusions(tools: BiomechanicsTools, path: str, markers_to_occlude: tuple[str, ...]) -> np.ndarray:
@@ -33,7 +70,7 @@ def reconstruct_with_occlusions(tools: BiomechanicsTools, path: str, markers_to_
 
 
 def normalize_into_cycles(
-    tools: BiomechanicsTools, data: np.ndarray, side: str, len_output: int = 100
+    tools: BiomechanicsTools, data: np.ndarray, side: Side, len_output: int = 100
 ) -> tuple[np.ndarray, ...]:
     """
     Extract the cycles and put them in 0 to 100% of the cycle, for the required side
@@ -45,7 +82,7 @@ def normalize_into_cycles(
     data
         The data (1d) to normalize
     side
-        The side ('right' or 'left') to extract to
+        The side (Side.RIGHT or Side.LEFT) to extract to
     len_output
         The number of data point to put the output
 
@@ -53,7 +90,7 @@ def normalize_into_cycles(
     -------
     All the cycles in a tuple
     """
-    cycles = tools.get_cycles(side)
+    cycles = tools.get_cycles(side.value)
 
     out = []
     for i in range(len(cycles) - 1):
@@ -65,6 +102,33 @@ def normalize_into_cycles(
     return tuple(out)
 
 
-def compute_skew_angle(matrix1, matrix2):
-    pass
-    # TODO
+def extract_dof_condition(tools: BiomechanicsTools, dof_condition: DoFCondition) -> np.ndarray:
+    """
+    Extract the cycles from tools.q according to the specified DoFCondition
+
+    Parameters
+    ----------
+    tools
+        The personalized kinematic model with the kinematics reconstructed
+    dof_condition
+        The condition of degrees of freedom to extract the cycle
+
+    Returns
+    -------
+    The data for the specified DoF
+    """
+    # Get some aliases
+    segment_names = tuple(s.name().to_string() for s in tools.model.segments())
+    dof_names = tuple(n.to_string() for n in tools.model.nameDof())
+    segment_name = dof_condition.segment
+    segment_idx = segment_names.index(segment_name)
+    dof_name = dof_condition.dof.value
+    dof_idx = dof_names.index(f"{segment_name}_{dof_name}")
+
+    # Extract and reexpress the data if needed
+    if dof_condition.relative_to == RelativeTo.VERTICAL:
+        index = tools.model.segment(segment_idx).getDofIdx(dof_name)
+        data = tools.relative_to_vertical(segment_name, "xyz", tools.q)[index, :]
+    else:
+        data = tools.q[dof_idx, :]
+    return data

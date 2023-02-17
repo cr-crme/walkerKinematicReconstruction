@@ -2,7 +2,16 @@ from walker import BiomechanicsTools
 from matplotlib import pyplot as plt
 import numpy as np
 
-from functions import reconstruct_with_occlusions, normalize_into_cycles
+from functions import (
+    extract_dof_condition,
+    normalize_into_cycles,
+    reconstruct_with_occlusions,
+    DoF,
+    Side,
+    RelativeTo,
+    DoFCondition,
+    MarkerOcclusionCondition,
+)
 
 
 # --- Options --- #
@@ -13,23 +22,22 @@ trials = (
     "data/pilote2/2023-01-19_AP_test_marchecrouch_05.c3d",
     "data/pilote2/2023-01-19_AP_test_marchecrouch_06.c3d",
 )
-marker_conditions = {
-    "All markers": {"remove_markers": (), "color": "r"},
-    "No pelvis": {"remove_markers": ("LPSI", "RPSI", "LASI", "RASI"), "color": "g"},
-    "Back pelvis only": {"remove_markers": ("LASI", "RASI"), "color": "b"},
-}
-dof_conditions = {
-    "Pelvis (right cycle)": {"segment": "Pelvis", "dof": "RotY", "relative_to_vertical": False, "side": "right"},
-    "Pelvis (left cycle)": {"segment": "Pelvis", "dof": "RotY", "relative_to_vertical": False, "side": "left"},
-    "Right Hip (vertical)": {"segment": "RFemur", "dof": "RotY", "relative_to_vertical": True, "side": "right"},
-    "Right Hip": {"segment": "RFemur", "dof": "RotY", "relative_to_vertical": False, "side": "right"},
-    "Right Knee": {"segment": "RTibia", "dof": "RotY", "relative_to_vertical": False, "side": "right"},
-    "Right Ankle": {"segment": "RFoot", "dof": "RotY", "relative_to_vertical": False, "side": "right"},
-    "Left Hip (vertical)": {"segment": "LFemur", "dof": "RotY", "relative_to_vertical": True, "side": "left"},
-    "Left Hip": {"segment": "LFemur", "dof": "RotY", "relative_to_vertical": False, "side": "left"},
-    "Left Knee": {"segment": "LTibia", "dof": "RotY", "relative_to_vertical": False, "side": "left"},
-    "Left Ankle": {"segment": "LFoot", "dof": "RotY", "relative_to_vertical": False, "side": "left"},
-}
+marker_conditions = (
+    MarkerOcclusionCondition(name="All markers", remove_indices=(), color="k"),
+    MarkerOcclusionCondition(name="No pelvis", remove_indices=("LPSI", "RPSI", "LASI", "RASI"), color="g"),
+    MarkerOcclusionCondition(name="Back pelvis only", remove_indices=("LASI", "RASI"), color="b"),
+)
+dof_conditions = (
+    DoFCondition(name="Pelvis (Right cycle)", segment="Pelvis", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.RIGHT),
+    DoFCondition(name="Pelvis (Left cycle)", segment="Pelvis", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.LEFT),
+    DoFCondition(name="Right Hip (vertical)", segment="RFemur", dof=DoF.ROT_Y, relative_to=RelativeTo.VERTICAL, side=Side.RIGHT),
+    DoFCondition(name="Right Hip", segment="RFemur", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.RIGHT),
+    DoFCondition(name="Right Knee", segment="RTibia", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.RIGHT),
+    DoFCondition(name="Right Ankle", segment="RFoot", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.RIGHT),
+    DoFCondition(name="Left Hip", segment="LFemur", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.LEFT),
+    DoFCondition(name="Left Knee", segment="LTibia", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.LEFT),
+    DoFCondition(name="Left Ankle", segment="LFoot", dof=DoF.ROT_Y, relative_to=RelativeTo.PARENT, side=Side.LEFT),
+)
 # --------------- #
 
 
@@ -39,43 +47,26 @@ def main():
     tools.personalize_model(static_trial)
 
     # Reconstruct kinematics but simulate marker occlusions
-    dof_names = tuple(n.to_string() for n in tools.model.nameDof())
-    segment_names = tuple(s.name().to_string() for s in tools.model.segments())
-    results = {dof: {marker: [] for marker in marker_conditions} for dof in dof_conditions}
+    results = {dof.name: {marker.name: [] for marker in marker_conditions} for dof in dof_conditions}
     for trial in trials:
-        for marker_key in marker_conditions:
-            q = reconstruct_with_occlusions(tools, trial, marker_conditions[marker_key]["remove_markers"])
-
-            for dof_key in dof_conditions:
-                segment_name = dof_conditions[dof_key]["segment"]
-                segment_idx = segment_names.index(segment_name)
-                dof_name = dof_conditions[dof_key]["dof"]
-                dof_idx = dof_names.index(f"{segment_name}_{dof_name}")
-                # Select the dof to print
-                if dof_conditions[dof_key]["relative_to_vertical"]:
-                    index = tools.model.segment(segment_idx).getDofIdx(dof_name)
-                    data = tools.relative_to_vertical(segment_name, "xyz", q)[index, :]
-                else:
-                    data = q[dof_idx, :]
-
-                # Separate the data in cycles
-                if dof_conditions[dof_key]["side"] is not None:
-                    cycles = normalize_into_cycles(tools, data, dof_conditions[dof_key]["side"])
-                else:
-                    cycles = (data,)
-                results[dof_key][marker_key].append(cycles)
+        for marker_condition in marker_conditions:
+            reconstruct_with_occlusions(tools, trial, marker_condition.remove_indices)
+            for dof_condition in dof_conditions:
+                dof_data = extract_dof_condition(tools, dof_condition)
+                cycles = normalize_into_cycles(tools, dof_data, dof_condition.side)
+                results[dof_condition.name][marker_condition.name].append(cycles)
 
     # Plot the results
-    for dof_key in dof_conditions:
-        dof_name = dof_conditions[dof_key]["dof"]
+    for dof_condition in dof_conditions:
+        dof_name = dof_condition.dof.value
         plt.figure()
-        plt.title(f"Joint: {dof_key}, about {dof_name[-1]}")
+        plt.title(f"Joint: {dof_condition.name}, about {dof_name[-1]}")
         plt.xlabel("Cycle (%)")
-        plt.ylabel(f"{dof_key} angle (degree)")
-        for marker_key in marker_conditions:
-            for trial in results[dof_key][marker_key]:
+        plt.ylabel(f"{dof_condition.name} angle (degree)")
+        for marker_condition in marker_conditions:
+            for trial in results[dof_condition.name][marker_condition.name]:
                 for cycle in trial:
-                    plt.plot(cycle * 180 / np.pi, marker_conditions[marker_key]["color"])
+                    plt.plot(cycle * 180 / np.pi, marker_condition.color)
     plt.show()
 
 

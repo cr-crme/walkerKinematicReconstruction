@@ -256,9 +256,8 @@ class BiomechanicsTools:
         if not self.c3d_path:
             raise RuntimeError("A C3D file must be loaded")
 
-        if side != "right" and side != "left":
-            raise ValueError("side must be 'right' or 'left'")
-        side = "Left" if side == "left" else "Right"
+        if side != "Right" and side != "Left":
+            raise ValueError("side must be 'Right' or 'Left'")
 
         events_side = self.c3d["parameters"]["EVENT"]["CONTEXTS"]["value"]
         events_tag = self.c3d["parameters"]["EVENT"]["LABELS"]["value"]
