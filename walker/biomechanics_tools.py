@@ -72,7 +72,7 @@ class BiomechanicsTools:
         compute_automatic_events
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
-        self.process_kinematic_reconstruction(trial)
+        self.process_kinematics(trial)
         self.inverse_dynamics()  # TODO ADD force platform
 
         # Write the c3d as if it was the plug in gate output
@@ -80,7 +80,7 @@ class BiomechanicsTools:
         file_name = os.path.splitext(os.path.basename(trial))[0]
         self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events=compute_automatic_events)
 
-    def process_kinematic_reconstruction(self, trial: str, visualize: bool = False):
+    def process_kinematics(self, trial: str, visualize: bool = False):
         """
         Performs the kinematics reconstruction
 
@@ -96,7 +96,7 @@ class BiomechanicsTools:
         This method populates self.c3d, self.c3d_path, self.t, self.q, self.qdot and self.qddot
         """
         self.load_c3d_file(trial)
-        frames = self._select_frames_to_reconstruct()
+        frames = self._select_frames_to_reconstruct(acceptance_threshold=0.7)
         self.reconstruct_kinematics(frames=frames)
         self.unwrap_kinematics()
         if visualize:
@@ -114,18 +114,31 @@ class BiomechanicsTools:
         self.c3d_path = trial
         self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
 
-    def _select_frames_to_reconstruct(self) -> slice:
+    def _select_frames_to_reconstruct(self, acceptance_threshold: float = 1.0) -> slice:
+        """
+        Select the first and last frame where the percentage threshold of visible markers is satisfied
+
+        Parameters
+        ----------
+        acceptance_threshold
+            The percentage of markers that must be present. Default all the marker should be seen
+
+        Returns
+        -------
+        The frames to reconstruct
+        """
         technical_markers = tuple(name.to_string() for name in self.model.technicalMarkerNames())
         n_technical_markers = len(technical_markers)
         c3d_marker_names = self.c3d["parameters"]["POINT"]["LABELS"]["value"]
         marker_index = tuple(c3d_marker_names.index(n) for n in technical_markers)
         n_frames = self.c3d["data"]["points"].shape[2]
 
-        n_nan_marker_per_frame = np.sum(np.isnan(np.sum(self.c3d["data"]["points"][:, marker_index, :], axis=0)), axis=0)
+        n_nan_marker_per_frame = np.sum(
+            np.isnan(np.sum(self.c3d["data"]["points"][:, marker_index, :], axis=0)), axis=0
+        )
         missing_percentage_per_frame = n_nan_marker_per_frame / n_technical_markers
 
-        acceptance_threshold = 0.4  # maximum % of markers are missing
-        is_frame_accepted = list(missing_percentage_per_frame < acceptance_threshold)
+        is_frame_accepted = list(missing_percentage_per_frame < (1 - acceptance_threshold))
         first_frame = is_frame_accepted.index(True)
         is_frame_accepted.reverse()
         last_frame = n_frames - is_frame_accepted.index(True)
@@ -167,6 +180,34 @@ class BiomechanicsTools:
         self.is_kinematic_reconstructed = True
 
         return self.q
+
+    def relative_to_vertical(self, segment: str, angle_sequence: str, q: np.ndarray = None) -> np.array:
+        """
+        Provide the Euler angles of the specified segment relative to vertical
+
+        Parameters
+        ----------
+        segment
+            The name of the segment to express relative to vertical
+        angle_sequence
+            The sequence of angle to reconstruct to
+        q
+            The generalized coordinates to use. If None is sent, then self.q is
+            used (assuming kinematics was reconstructed)
+
+        Returns
+        -------
+        The Euler angles for the specified segment
+        """
+        if q is None and not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before performing the unwrap")
+        q = self.q if q is None else q
+
+        segment_idx = tuple(s.name().to_string() for s in self.model.segments()).index(segment)
+        jcs = np.ndarray((4, 4, self.q.shape[1]))
+        for i, q in enumerate(q.T):
+            jcs[:, :, i] = self.model.globalJCS(q, segment_idx).to_array()
+        return to_euler(jcs, angle_sequence)
 
     def unwrap_kinematics(self):
         """
