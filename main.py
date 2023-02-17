@@ -3,7 +3,10 @@ from walker import BiomechanicsTools
 # --- Options --- #
 kinematic_model_file_path = "temporary.bioMod"
 static_trial = "data/pilote2/2023-01-19_AP_test_statique_TROCH.c3d"
-trials = ("data/pilote2/2023-01-19_AP_test_marchecrouch_05.c3d", "data/pilote2/2023-01-19_AP_test_marchecrouch_06.c3d",)
+trials = (
+    "data/pilote2/2023-01-19_AP_test_marchecrouch_05.c3d",
+    "data/pilote2/2023-01-19_AP_test_marchecrouch_06.c3d",
+)
 # --------------- #
 
 

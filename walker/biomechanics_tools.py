@@ -46,7 +46,7 @@ class BiomechanicsTools:
         self.com = np.array([self.model.CoM(q).to_array() for q in self.q.T]).T
         return self.com
 
-    def personalize_model(self, static_trial: str, model_path: str):
+    def personalize_model(self, static_trial: str, model_path: str = "temporary.bioMod"):
         """
         Collapse the generic model according to the data of the static trial
 
@@ -229,12 +229,56 @@ class BiomechanicsTools:
             angle_sequence = segment.seqR().to_string()
             if not angle_sequence:
                 continue
-            angle_names = tuple(segment.nameDof(i).to_string() for i in range(segment.nbDofTrans(), segment.nbDofTrans() + segment.nbDofRot()))
+            angle_names = tuple(
+                segment.nameDof(i).to_string()
+                for i in range(segment.nbDofTrans(), segment.nbDofTrans() + segment.nbDofRot())
+            )
             angle_index = tuple(dof_names.index(f"{segment_name}_{angle_name}") for angle_name in angle_names)
 
             data = self.q[angle_index, :]
             rot = to_rotation_matrix(angles=data, angle_sequence=angle_sequence)
             self.q[angle_index, :] = np.unwrap(to_euler(rot, angle_sequence), axis=1)
+
+    def get_cycles(self, side) -> tuple[int, ...]:
+        """
+        Get the cycles slices based on the C3D file. More specifically,
+        it returns the all the indices of the Foot Strikes
+
+        Parameters
+        ----------
+        side
+            The side ("right" or "left") to get the slices from
+
+        Returns
+        -------
+        All the cycles
+        """
+        if not self.c3d_path:
+            raise RuntimeError("A C3D file must be loaded")
+
+        if side != "right" and side != "left":
+            raise ValueError("side must be 'right' or 'left'")
+        side = "Left" if side == "left" else "Right"
+
+        events_side = self.c3d["parameters"]["EVENT"]["CONTEXTS"]["value"]
+        events_tag = self.c3d["parameters"]["EVENT"]["LABELS"]["value"]
+        events_time = self.c3d["parameters"]["EVENT"]["TIMES"]["value"][1, :]
+
+        rate = self.c3d["header"]["points"]["frame_rate"]
+        first_time = self.c3d["header"]["points"]["first_frame"] / rate
+        last_time = self.c3d["header"]["points"]["last_frame"] / rate
+        t = np.linspace(first_time, last_time, self.c3d["data"]["points"].shape[2])
+        events_index = [list(t > event).index(True) for event in events_time]
+
+        out = []
+        for event_side, event_tag, event_index in zip(events_side, events_tag, events_index):
+            if event_side != side:
+                continue
+            if event_tag != "Foot Strike":
+                continue
+            out.append(event_index)
+
+        return tuple(out)
 
     def show_kinematic_reconstruction(self):
         """
@@ -453,7 +497,9 @@ class BiomechanicsTools:
             self.events = self.find_feet_events()
             events_number, events_contexts, events_labels, events_times = self.events
             for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
-                frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+                frame = (
+                    int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+                )
                 self.bioviz_window.set_event(frame, f"{context} {label}")
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.disconnect()
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.clicked.connect(self._dispatch_events_from_bioviz)

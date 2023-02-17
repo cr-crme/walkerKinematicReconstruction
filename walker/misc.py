@@ -45,21 +45,24 @@ def to_rotation_matrix(
                 np.concatenate((zeros, np.cos(x), -np.sin(x)), axis=1),
                 np.concatenate((zeros, np.sin(x), np.cos(x)), axis=1),
             ),
-            axis=0),
+            axis=0,
+        ),
         "y": lambda y: np.concatenate(
             (
                 np.concatenate((np.cos(y), zeros, np.sin(y)), axis=1),
                 np.concatenate((zeros, ones, zeros), axis=1),
                 np.concatenate((-np.sin(y), zeros, np.cos(y)), axis=1),
             ),
-            axis=0),
+            axis=0,
+        ),
         "z": lambda z: np.concatenate(
             (
                 np.concatenate((np.cos(z), -np.sin(z), zeros), axis=1),
                 np.concatenate((np.sin(z), np.cos(z), zeros), axis=1),
                 np.concatenate((zeros, zeros, ones), axis=1),
             ),
-            axis=0),
+            axis=0,
+        ),
     }
     rt = np.repeat(np.identity(4 if translations is not None else 3)[:, :, np.newaxis], n, axis=2)
     for angle, axis in zip(angles, angle_sequence):
