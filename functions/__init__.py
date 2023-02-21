@@ -31,10 +31,14 @@ class Side(Enum):
 @dataclass
 class DoFCondition:
     name: str
-    segment: str
+    segments: tuple[str, ...]
     dof: DoF
-    side: Side.RIGHT
+    sides: tuple[Side, ...]
     relative_to: RelativeTo = RelativeTo.PARENT
+
+    def __post_init__(self):
+        if  len(self.segments) != len(self.sides):
+            raise ValueError("segments and sides must be of same size")
 
 
 @dataclass
@@ -70,7 +74,7 @@ def reconstruct_with_occlusions(tools: BiomechanicsTools, path: str, markers_to_
 
 
 def normalize_into_cycles(
-    tools: BiomechanicsTools, data: np.ndarray, side: Side, len_output: int = 100
+    tools: BiomechanicsTools, data: np.ndarray, side: Side, len_output: int = 101
 ) -> tuple[np.ndarray, ...]:
     """
     Extract the cycles and put them in 0 to 100% of the cycle, for the required side
@@ -102,7 +106,7 @@ def normalize_into_cycles(
     return tuple(out)
 
 
-def extract_dof_condition(tools: BiomechanicsTools, dof_condition: DoFCondition) -> np.ndarray:
+def extract_dof_condition(tools: BiomechanicsTools, dof_condition: DoFCondition, segment_name: str) -> np.ndarray:
     """
     Extract the cycles from tools.q according to the specified DoFCondition
 
@@ -112,6 +116,8 @@ def extract_dof_condition(tools: BiomechanicsTools, dof_condition: DoFCondition)
         The personalized kinematic model with the kinematics reconstructed
     dof_condition
         The condition of degrees of freedom to extract the cycle
+    segment_name
+        The segment_name to extract information from
 
     Returns
     -------
@@ -120,7 +126,6 @@ def extract_dof_condition(tools: BiomechanicsTools, dof_condition: DoFCondition)
     # Get some aliases
     segment_names = tuple(s.name().to_string() for s in tools.model.segments())
     dof_names = tuple(n.to_string() for n in tools.model.nameDof())
-    segment_name = dof_condition.segment
     segment_idx = segment_names.index(segment_name)
     dof_name = dof_condition.dof.value
     dof_idx = dof_names.index(f"{segment_name}_{dof_name}")
