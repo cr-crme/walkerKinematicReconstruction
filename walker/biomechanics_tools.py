@@ -8,7 +8,7 @@ import ezc3d
 import numpy as np
 from scipy import signal
 
-from .misc import differentiate
+from .misc import differentiate, to_rotation_matrix, to_euler
 from .plugin_gait import SimplePluginGait
 
 
@@ -17,8 +17,8 @@ def suffix_to_all(values: tuple[str, ...] | list[str, ...], suffix: str) -> tupl
 
 
 class BiomechanicsTools:
-    def __init__(self, body_mass):
-        self.generic_model = SimplePluginGait(body_mass)
+    def __init__(self, body_mass: float, include_upper_body: bool = True):
+        self.generic_model = SimplePluginGait(body_mass, include_upper_body=False)
         self.model = None
 
         self.is_kinematic_reconstructed: bool = False
@@ -46,7 +46,7 @@ class BiomechanicsTools:
         self.com = np.array([self.model.CoM(q).to_array() for q in self.q.T]).T
         return self.com
 
-    def personalize_model(self, static_trial: str, model_path: str):
+    def personalize_model(self, static_trial: str, model_path: str = "temporary.bioMod"):
         """
         Collapse the generic model according to the data of the static trial
 
@@ -72,37 +72,226 @@ class BiomechanicsTools:
         compute_automatic_events
             If the automatic event finding algorithm should be used. Otherwise, the events in the c3d file are used
         """
-        self.reconstruct_kinematics(trial)
-        self.inverse_dynamics()
+        self.process_kinematics(trial)
+        self.inverse_dynamics()  # TODO ADD force platform
 
         # Write the c3d as if it was the plug in gate output
         path = os.path.dirname(trial)
         file_name = os.path.splitext(os.path.basename(trial))[0]
-        self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events)
+        self.to_c3d(f"{path}/{file_name}_processed.c3d", compute_automatic_events=compute_automatic_events)
 
-    def reconstruct_kinematics(self, trial: str) -> np.ndarray:
+    def process_kinematics(self, trial: str, visualize: bool = False):
         """
-        Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded using a Kalman filter
+        Performs the kinematics reconstruction
 
         Parameters
         ----------
         trial
             The path to the c3d file of the trial to reconstruct the kinematics from
+        visualize
+            If the reconstruction should be shown
+
+        Returns
+        -------
+        This method populates self.c3d, self.c3d_path, self.t, self.q, self.qdot and self.qddot
+        """
+        self.load_c3d_file(trial)
+        frames = self._select_frames_to_reconstruct(acceptance_threshold=0.7)
+        self.reconstruct_kinematics(frames=frames)
+        self.unwrap_kinematics()
+        if visualize:
+            self.show_kinematic_reconstruction()
+
+    def load_c3d_file(self, trial):
+        """
+        Load the c3d in the variables
+
+        Parameters
+        ----------
+        trial
+            The path to the c3d file of the trial to reconstruct the kinematics from
+        """
+        self.c3d_path = trial
+        self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
+
+    def _select_frames_to_reconstruct(self, acceptance_threshold: float = 1.0) -> slice:
+        """
+        Select the first and last frame where the percentage threshold of visible markers is satisfied
+
+        Parameters
+        ----------
+        acceptance_threshold
+            The percentage of markers that must be present. Default all the marker should be seen
+
+        Returns
+        -------
+        The frames to reconstruct
+        """
+        technical_markers = tuple(name.to_string() for name in self.model.technicalMarkerNames())
+        n_technical_markers = len(technical_markers)
+        c3d_marker_names = self.c3d["parameters"]["POINT"]["LABELS"]["value"]
+        marker_index = tuple(c3d_marker_names.index(n) for n in technical_markers)
+        n_frames = self.c3d["data"]["points"].shape[2]
+
+        n_nan_marker_per_frame = np.sum(
+            np.isnan(np.sum(self.c3d["data"]["points"][:, marker_index, :], axis=0)), axis=0
+        )
+        missing_percentage_per_frame = n_nan_marker_per_frame / n_technical_markers
+
+        is_frame_accepted = list(missing_percentage_per_frame < (1 - acceptance_threshold))
+        first_frame = is_frame_accepted.index(True)
+        is_frame_accepted.reverse()
+        last_frame = n_frames - is_frame_accepted.index(True)
+
+        return slice(first_frame, last_frame)
+
+    def reconstruct_kinematics(self, frames: slice = slice(None)) -> np.ndarray:
+        """
+        Reconstruct the kinematics of the specified trial assuming a biorbd model is loaded using a Kalman filter
+
+        Parameters
+        ----------
+        frames
+            The frames to reconstruct
 
         Returns
         -------
         The matrix nq x ntimes of the reconstructed kinematics
         """
-
         if not self.is_model_loaded:
             raise RuntimeError("The biorbd model must be loaded. You can do so by calling generate_personalized_model")
 
-        self.c3d_path = trial
-        self.c3d = ezc3d.c3d(self.c3d_path, extract_forceplat_data=True)
-        self.t, self.q, self.qdot, self.qddot = biorbd.extended_kalman_filter(self.model, trial)
+        first_frame_c3d = self.c3d["header"]["points"]["first_frame"]
+        last_frame_c3d = self.c3d["header"]["points"]["last_frame"]
+        n_frames_before = (frames.start - first_frame_c3d) if frames.start is not None else 0
+        n_frames_after = (last_frame_c3d - frames.stop + 1) if frames.stop is not None else 0
+        n_frames_total = last_frame_c3d - first_frame_c3d + 1
+        self.t, self.q, self.qdot, self.qddot = biorbd.extended_kalman_filter(self.model, self.c3d_path, frames=frames)
+
+        # Align the data with the c3d
+        n_q = self.q.shape[0]
+        dof_padding_before = np.zeros((n_q, n_frames_before))
+        dof_padding_after = np.zeros((n_q, n_frames_after))
+        self.t = np.linspace(first_frame_c3d, last_frame_c3d, n_frames_total)
+        self.q = np.concatenate((dof_padding_before, self.q, dof_padding_after), axis=1)
+        self.qdot = np.concatenate((dof_padding_before, self.qdot, dof_padding_after), axis=1)
+        self.qddot = np.concatenate((dof_padding_before, self.qddot, dof_padding_after), axis=1)
+
         self.is_kinematic_reconstructed = True
 
         return self.q
+
+    def relative_to_vertical(self, segment: str, angle_sequence: str, q: np.ndarray = None) -> np.array:
+        """
+        Provide the Euler angles of the specified segment relative to vertical
+
+        Parameters
+        ----------
+        segment
+            The name of the segment to express relative to vertical
+        angle_sequence
+            The sequence of angle to reconstruct to
+        q
+            The generalized coordinates to use. If None is sent, then self.q is
+            used (assuming kinematics was reconstructed)
+
+        Returns
+        -------
+        The Euler angles for the specified segment
+        """
+        if q is None and not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before performing the unwrap")
+        q = self.q if q is None else q
+
+        segment_idx = tuple(s.name().to_string() for s in self.model.segments()).index(segment)
+        jcs = np.ndarray((4, 4, self.q.shape[1]))
+        for i, q in enumerate(q.T):
+            jcs[:, :, i] = self.model.globalJCS(q, segment_idx).to_array()
+        return to_euler(jcs, angle_sequence)
+
+    def unwrap_kinematics(self):
+        """
+        Performs unwrap on the kinematics from which it re-expressed in terms of matrix rotation before
+        (which makes it more likely to be in the same quadrant)
+
+        Returns
+        -------
+
+        """
+
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before performing the unwrap")
+
+        segment_names = tuple(s.name().to_string() for s in self.model.segments())
+        dof_names = tuple(n.to_string() for n in self.model.nameDof())
+        for segment_name in segment_names:
+            segment = self.model.segment(segment_names.index(segment_name))
+            angle_sequence = segment.seqR().to_string()
+            if not angle_sequence:
+                continue
+            angle_names = tuple(
+                segment.nameDof(i).to_string()
+                for i in range(segment.nbDofTrans(), segment.nbDofTrans() + segment.nbDofRot())
+            )
+            angle_index = tuple(dof_names.index(f"{segment_name}_{angle_name}") for angle_name in angle_names)
+
+            data = self.q[angle_index, :]
+            rot = to_rotation_matrix(angles=data, angle_sequence=angle_sequence)
+            self.q[angle_index, :] = np.unwrap(to_euler(rot, angle_sequence), axis=1)
+
+    def get_cycles(self, side) -> tuple[int, ...]:
+        """
+        Get the cycles slices based on the C3D file. More specifically,
+        it returns the all the indices of the Foot Strikes
+
+        Parameters
+        ----------
+        side
+            The side ("right" or "left") to get the slices from
+
+        Returns
+        -------
+        All the cycles
+        """
+        if not self.c3d_path:
+            raise RuntimeError("A C3D file must be loaded")
+
+        if side != "Right" and side != "Left":
+            raise ValueError("side must be 'Right' or 'Left'")
+
+        events_side = self.c3d["parameters"]["EVENT"]["CONTEXTS"]["value"]
+        events_tag = self.c3d["parameters"]["EVENT"]["LABELS"]["value"]
+        events_time = self.c3d["parameters"]["EVENT"]["TIMES"]["value"][1, :]
+
+        rate = self.c3d["header"]["points"]["frame_rate"]
+        first_time = self.c3d["header"]["points"]["first_frame"] / rate
+        last_time = self.c3d["header"]["points"]["last_frame"] / rate
+        t = np.linspace(first_time, last_time, self.c3d["data"]["points"].shape[2])
+        events_index = [list(t > event).index(True) for event in events_time]
+
+        out = []
+        for event_side, event_tag, event_index in zip(events_side, events_tag, events_index):
+            if event_side != side:
+                continue
+            if event_tag != "Foot Strike":
+                continue
+            out.append(event_index)
+
+        return tuple(out)
+
+    def show_kinematic_reconstruction(self):
+        """
+        Opens a BioViz window and show the kinematic reconstruction
+        """
+
+        if not self.is_kinematic_reconstructed:
+            raise RuntimeError("The kinematics must be reconstructed before showing the reconstruction")
+
+        viz = bioviz.Viz(loaded_model=self.model)
+        viz.load_movement(self.q)
+        viz.load_experimental_markers(self.c3d_path)
+        viz.radio_c3d_editor_model.click()
+        viz.exec()
 
     def inverse_dynamics(self) -> np.ndarray:
         """
@@ -115,6 +304,7 @@ class BiomechanicsTools:
         if not self.is_kinematic_reconstructed:
             raise RuntimeError("The kinematics must be reconstructed before performing the inverse dynamics")
 
+        # TODO Compute if norm(external_force) < threshold, then nan
         self.tau = np.array(
             [
                 self.model.InverseDynamics(q, qdot, qddot).to_array()
@@ -270,7 +460,9 @@ class BiomechanicsTools:
 
         # Transfer the marker data to the new c3d
         c3d["parameters"]["POINT"]["LABELS"]["value"] = point_names
-        n_frame = self.c3d["header"]["points"]["last_frame"] - self.c3d["header"]["points"]["first_frame"] + 1
+        first_frame = self.c3d["header"]["points"]["first_frame"]
+        last_frame = self.c3d["header"]["points"]["last_frame"]
+        n_frame = last_frame - first_frame + 1
         data = np.ndarray((4, len(point_names), n_frame)) * np.nan
         data[3, ...] = 1
         for i, name_in_c3d in enumerate(self.c3d["parameters"]["POINT"]["LABELS"]["value"]):
@@ -293,22 +485,26 @@ class BiomechanicsTools:
             data[:3, point_names.index(f"{dof}Power"), :] = self.tau[idx, :] * self.qdot[idx, :]
         c3d["data"]["points"] = data
 
-        # Find and add events
-        self.events = self.find_feet_events()
-        events_number, events_contexts, events_labels, events_times = self.events
-
         self.bioviz_window = bioviz.Viz(loaded_model=self.model)
         self.bioviz_window.load_movement(self.q)
         self.bioviz_window.load_experimental_markers(self.c3d_path)
         self.bioviz_window.radio_c3d_editor_model.click()
+
         if compute_automatic_events:
             self.bioviz_window.clear_events()
+            # Find and add events
+            self.events = self.find_feet_events()
+            events_number, events_contexts, events_labels, events_times = self.events
             for context, label, time in zip(events_contexts, events_labels, events_times[1, :]):
-                frame = int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+                frame = (
+                    int(time * self.c3d["header"]["points"]["frame_rate"]) - self.c3d["header"]["points"]["first_frame"]
+                )
                 self.bioviz_window.set_event(frame, f"{context} {label}")
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.disconnect()
         self.bioviz_window.analyses_c3d_editor.export_c3d_button.clicked.connect(self._dispatch_events_from_bioviz)
         self.bioviz_window.exec()
+        if self.events is None:
+            raise RuntimeError("No events found, have you clicked Export C3D?")
         events_number, events_contexts, events_labels, events_times = self.events
 
         c3d.add_parameter("EVENT", "USED", (events_number,))
